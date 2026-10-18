@@ -1,6 +1,6 @@
 # Route and Feature Inventory
 
-Status: ✅ built and working · 🟡 partial · ❌ missing · 🆕 added in this branch. Updated 18 Oct 2026: every 🆕 route exists, builds and answers in the production smoke test.
+Status: ✅ built and working · 🟡 partial · ❌ missing · 🆕 added in this branch. Updated 18 Oct 2026: every 🆕 item exists, builds and answers in the production smoke test; ❌ and 🟡 rows are still open.
 
 ## Public website
 
@@ -40,7 +40,7 @@ Status: ✅ built and working · 🟡 partial · ❌ missing · 🆕 added in th
 | `/admin/applications/[id]` | 360° workspace | ✅ | Restyle only |
 | `/admin/staff` | Staff management | ✅ | + MFA status, session revoke |
 | `/admin/activity` | Audit explorer | ✅ | Keep |
-| `/admin/site`, `/admin/site/flow`, `/admin/site/preview/[slug]` | Website CMS, applicant-flow editor | ✅ | + draft/publish |
+| `/admin/site`, `/admin/site/flow`, `/admin/site/preview/[slug]` | Website CMS, applicant-flow editor | ✅ | 🟡 publishedAt stored; the Website screen still publishes on save (draft button pending) |
 | `/admin/content` | Articles: draft/review/publish, revisions | ❌ | ✅ 🆕 |
 | `/admin/redirects` | Redirect management | ❌ | ✅ 🆕 |
 | `/admin/support` | Tickets and data-rights requests | ❌ | ✅ 🆕 |
@@ -58,7 +58,7 @@ Status: ✅ built and working · 🟡 partial · ❌ missing · 🆕 added in th
 | 4 | OTP registration, duplicate guard, session, step-up | 🟡 | OTP + session 🆕 |
 | 5 | Consent ledger, re-consent, revocation | ✅ | DB append-only 🆕 |
 | 6 | Application details form | ✅ | — |
-| 7–8 | Document centre + pipeline | ✅ (sync scan) | Expiry watcher 🆕 |
+| 7–8 | Document centre + pipeline | ✅ (sync scan) | ❌ Expiry watcher not built yet (see progress: remaining work) |
 | 9 | Submit + snapshot | ✅ | — |
 | 10 | Status tracker | ✅ | Dashboard 🆕 |
 | 11–14 | Intake, assignment, workspace, review | ✅ | — |
