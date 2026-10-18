@@ -1,0 +1,350 @@
+// LoansForIndia data model — Phase 1 (customer acquisition).
+// SQLite for local development; switch provider to "postgresql" for production.
+// Terminology: everything a customer starts is a LoanApplication (never a "lead").
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model LoanApplication {
+  id           String  @id @default(cuid())
+  reference    String  @unique // customer-facing, e.g. LFI-7K3P9Q
+  // Application state (Platform Flow v4, section 39). Changed only through named transitions in src/lib/transitions.server.ts.
+  // ENQUIRY | CONSENT_PENDING | PROFILE_IN_PROGRESS | DOCUMENTS_PENDING | VERIFICATION_REVIEW | ACTION_NEEDED
+  // | APPLICATION_PREPARATION | INTERNAL_REVIEW | READY_FOR_BANK | SUBMITTED_TO_BANK | CLOSED
+  // The bank-confirmed status lives on BankStatusEvent, never here.
+  stage        String  @default("ENQUIRY")
+  onHold       Boolean @default(false) // ON_HOLD can apply at any point
+  holdReason   String?
+  heldBy       String?
+  product      String // a loan type id: PERSONAL_LOAN | BUSINESS_LOAN | one the master admin added (src/config/applicantFlow.ts)
+  // The form, questions and document checklist this application started with (JSON AppFlow). Null = the built-in defaults.
+  // Later changes on the master admin's Application flow screen reach new applications only.
+  flow         String?
+  flowVersion  Int     @default(0)
+  loanAmount   Int // rupees
+  tenureMonths Int?
+  purpose      String?
+
+  // Collected after consent, in the application details form (section 6). Null until then.
+  fullName           String?
+  mobile             String // 10-digit Indian mobile, no country code
+  email              String?
+  city               String?
+  pincode            String?
+  employmentType     String? // SALARIED | SELF_EMPLOYED_BUSINESS | SELF_EMPLOYED_PROFESSIONAL
+  employerName       String?
+  monthlyIncome      Int? // rupees, net take-home (self-employed: annual / 12)
+  existingEmi        Int       @default(0)
+  dob                String? // YYYY-MM-DD
+  profile            String? // JSON: remaining section 6 fields (see src/lib/profile.ts)
+  // PAN and bank account number: encrypted, plus a keyed hash of PAN for duplicate checks. Never stored in plain text.
+  panEnc             String?
+  panHash            String?
+  panMasked          String? // XXXXX1234X
+  accountEnc         String?
+  accountMasked      String? // XXXXXX1234
+  detailsCompletedAt DateTime?
+
+  // Acquisition attribution
+  source       String? // utm_source or "direct"
+  medium       String?
+  campaign     String?
+  landingPath  String?
+  referrer     String?
+  referralCode String? // affiliate / referral code from ?ref=
+
+  // One named owner at a time (section 12)
+  ownerId        String? // staff username
+  ownerDueAt     DateTime?
+  assignedAt     DateTime?
+  reviewPassedAt DateTime?
+  reviewPassedBy String?
+
+  closedReason String? // DISBURSED | REJECTED_BY_BANK | REJECTED_INTERNAL | CANCELLED_BY_BANK | WITHDRAWN | CONSENT_REVOKED | DORMANT | DUPLICATE | NO_ELIGIBLE_BANK
+  closedNote   String?
+  closedAt     DateTime?
+
+  // Applicant link: reaches their application through a secret link (OTP sign-in to follow).
+  // Only a SHA-256 hash of the token is stored.
+  uploadTokenHash      String?   @unique
+  uploadTokenExpiresAt DateTime?
+  submittedAt          DateTime? // applicant pressed "Submit"
+  declarationAt        DateTime? // applicant confirmed details are true and complete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  consents     ConsentRecord[]
+  events       ApplicationEvent[]
+  documents    ApplicationDocument[]
+  bankShares   BankShare[]
+  snapshots    ApplicationSnapshot[]
+  tasks        ApplicationTask[]
+  flags        ApplicationFlag[]
+  attempts     BankAttempt[]
+  bankStatuses BankStatusEvent[]
+
+  @@index([mobile])
+  @@index([panHash])
+  @@index([stage, createdAt])
+  @@index([ownerId, stage])
+}
+
+// One row per purpose the customer agreed (or declined). Never updated, only appended.
+model ConsentRecord {
+  id              String          @id @default(cuid())
+  applicationId   String
+  application     LoanApplication @relation(fields: [applicationId], references: [id])
+  purpose         String // CONTACT | PROCESS_APPLICATION | SHARE_WITH_PARTNER_LENDERS | MARKETING
+  granted         Boolean // a revocation is a new row with granted = false
+  noticeVersion   String // version of the consent text shown
+  noticeText      String // exact wording shown at the time
+  noticeHash      String? // SHA-256 of noticeText
+  bankListVersion String? // partner-bank list the applicant saw (src/config/banks.ts)
+  banksNamed      String? // JSON array of bank ids named on the screen
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime        @default(now())
+
+  @@index([applicationId])
+}
+
+// Append-only audit trail for an application.
+model ApplicationEvent {
+  id            String          @id @default(cuid())
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  type          String // CREATED | STAGE_CHANGED | DUPLICATE_ATTEMPT | NOTE
+  actor         String // "customer" | staff email | "system"
+  detail        String? // JSON string
+  createdAt     DateTime        @default(now())
+
+  @@index([applicationId, createdAt])
+}
+
+// One uploaded file. A checklist slot (e.g. SALARY_SLIPS) can hold several files.
+// Files are encrypted at rest; the record never stores document numbers.
+model ApplicationDocument {
+  id            String          @id @default(cuid())
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  slot          String // see src/lib/documents.ts
+  originalName  String // sanitised file name, for staff reference only
+  mimeType      String // detected from file contents, not the browser
+  sizeBytes     Int
+  sha256        String // hash of the original file, for duplicate detection and integrity
+  storageKey    String          @unique // random name of the encrypted file
+  // UPLOADED | ACCEPTED | REJECTED | REMOVED
+  status        String          @default("UPLOADED")
+  scanResult    String // CLEAN | SKIPPED_DEV
+  rejectReason  String? // reason code, see REJECT_REASONS
+  rejectNote    String? // reviewer's plain-words instruction to the applicant
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@index([applicationId, slot])
+}
+
+// One document package sent to a bank/NBFC for this application.
+// Staff either download the package (and upload it through the bank's approved channel)
+// or create an expiring share link for the bank's sales officer. Only a hash of the link token is stored.
+model BankShare {
+  id            String          @id @default(cuid())
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  bankName      String
+  channel       String // BANK_PORTAL | BANK_SALES_OFFICER | MASTER_DSA | OTHER
+  contactName   String? // bank officer / POS the package is meant for
+  documentIds   String // JSON array of ApplicationDocument ids in the package
+  linkTokenHash String?         @unique // null when the package was only downloaded
+  linkExpiresAt DateTime?
+  maxDownloads  Int             @default(3)
+  downloadCount Int             @default(0)
+  revokedAt     DateTime?
+  bankReference String? // bank's application/lead number, once the bank confirms receipt
+  sharedBy      String
+  createdAt     DateTime        @default(now())
+
+  @@index([applicationId, createdAt])
+}
+
+// Frozen copy of what the applicant submitted (v1 at submit, a new version after each Action needed response).
+model ApplicationSnapshot {
+  id            String          @id @default(cuid())
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  version       Int
+  contentHash   String // SHA-256 of data
+  data          String // JSON: fields (PAN masked) + document ids and hashes
+  reason        String // SUBMITTED | ACTION_RESPONSE
+  createdAt     DateTime        @default(now())
+
+  @@unique([applicationId, version])
+}
+
+// "Action needed": a request to the applicant to fix or supply something (sections 14, 20).
+model ApplicationTask {
+  id            String          @id @default(cuid())
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id])
+  slots         String // JSON array of document slot ids unlocked by this task
+  fields        String // JSON array of detail sections unlocked by this task
+  reasonCode    String
+  message       String // plain words, shown to the applicant
+  status        String          @default("OPEN") // OPEN | RESPONDED | CANCELLED
+  createdBy     String
+  createdAt     DateTime        @default(now())
+  respondedAt   DateTime?
+
+  @@index([applicationId, status])
+}
+
+// Duplicate / fraud / manual flags. Never auto-reject: a person clears or acts on each (sections 11, 35).
+model ApplicationFlag {
+  id             String          @id @default(cuid())
+  applicationId  String
+  application    LoanApplication @relation(fields: [applicationId], references: [id])
+  type           String // DUPLICATE_PAN | DUPLICATE_MOBILE | VELOCITY_IP | TAMPER_SUSPECTED | MANUAL
+  detail         String?
+  status         String          @default("OPEN") // OPEN | CLEARED | CONFIRMED
+  raisedBy       String
+  createdAt      DateTime        @default(now())
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  resolutionNote String?
+
+  @@index([applicationId, status])
+}
+
+// One submission to one bank (sections 15-18). Only one active attempt per application.
+model BankAttempt {
+  id              String          @id @default(cuid())
+  applicationId   String
+  application     LoanApplication @relation(fields: [applicationId], references: [id])
+  bankId          String // src/config/banks.ts
+  bankName        String
+  // PREPARING | READY_TO_SUBMIT | SUBMITTED | OUTCOME_RECEIVED | CLOSED | RETURNED_OR_FAILED | SUPERSEDED
+  state           String          @default("PREPARING")
+  selectionBasis  String // why this bank (product coverage, sourcing fit, turnaround...)
+  selectedBy      String
+  preparedBy      String? // who sent the package to the gate
+  sentToGateAt    DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  sendBackReason  String?
+  templateVersion String?
+  manifest        String? // JSON frozen at approval: mapped fields, document ids + hashes
+  packageHash     String? // SHA-256 of manifest
+  bankReference   String?
+  branch          String?
+  submittedBy     String?
+  submittedAt     DateTime?
+  evidenceKey     String? // encrypted screenshot of the portal confirmation
+  failedTries     Int             @default(0)
+  outcomeNote     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  statuses BankStatusEvent[]
+
+  @@unique([bankId, bankReference])
+  @@index([applicationId, createdAt])
+  @@index([state])
+}
+
+// Bank-confirmed status, only from bank evidence. Append-only: fixes are superseding rows (section 19).
+model BankStatusEvent {
+  id               String          @id @default(cuid())
+  applicationId    String
+  application      LoanApplication @relation(fields: [applicationId], references: [id])
+  attemptId        String
+  attempt          BankAttempt     @relation(fields: [attemptId], references: [id])
+  // RECEIVED | PROCESSING | QUERY | IN_PRINCIPLE | SANCTIONED | AGREEMENT_COMPLETED | DISBURSED | REJECTED | CANCELLED
+  status           String
+  source           String // PORTAL | BANK_API | BANK_MIS | BANK_EMAIL | PORTAL_SCREENSHOT | MASTER_DSA_REPORT
+  evidenceKey      String? // encrypted evidence file
+  evidenceName     String?
+  bankWording      String? // the bank's own words (stage name, rejection reason, query text)
+  reasonCode       String? // rejection reason code
+  amount           Int? // sanctioned or disbursed amount, as reported by the bank
+  ratePct          Float?
+  tenureMonths     Int?
+  loanAccountLast4 String?
+  eventDate        String? // YYYY-MM-DD from the evidence
+  recordedBy       String
+  // In-principle, sanction and manually entered disbursal need a second person before they count (section 19 step 7)
+  needsCheck       Boolean         @default(false)
+  checkedBy        String?
+  checkedAt        DateTime?
+  supersedesId     String?
+  supersedeReason  String?
+  createdAt        DateTime        @default(now())
+
+  @@index([applicationId, createdAt])
+  @@index([attemptId, createdAt])
+}
+
+// Staff logins the master admin manages from the Staff screen (JP, 5 Oct 2026).
+// STAFF_USERS in .env still works and always wins on a username clash, so the master admin can't be locked out.
+model StaffAccount {
+  username     String   @id
+  name         String
+  role         String // a key of ROLES in src/lib/rbac.ts
+  banks        String   @default("[]") // JSON list of bank ids this person holds a portal login for
+  passwordHash String // scrypt, "salt:hash" in hex
+  active       Boolean  @default(true)
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Append-only log of back-office actions that aren't about one application (staff changes, exports).
+model AdminEvent {
+  id        String   @id @default(cuid())
+  type      String // STAFF_CREATED | STAFF_UPDATED | STAFF_PASSWORD_RESET | STAFF_DISABLED | STAFF_ENABLED | COUNTS_EXPORTED | SITE_CONTENT_SAVED | SITE_CONTENT_RESTORED | SITE_IMAGE_UPLOADED | SITE_IMAGE_DELETED | FLOW_SAVED | FLOW_RESTORED
+  actor     String
+  target    String?
+  detail    String? // JSON string
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Public website content set by the master admin on the Website screen. The newest row is live; older rows are the history.
+model SiteContentVersion {
+  id        Int      @id @default(autoincrement())
+  content   String // JSON, shape in src/config/siteContent.ts
+  note      String?
+  createdBy String
+  createdAt DateTime @default(now())
+}
+
+/// Images the master admin uploads on the Website screen (public once used on a page). Stored encrypted like documents.
+model SiteAsset {
+  id         String    @id @default(cuid())
+  name       String // cleaned original file name
+  mime       String // image/jpeg | image/png | image/webp, from the file's first bytes
+  bytes      Int
+  storageKey String
+  alt        String    @default("")
+  createdBy  String
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+}
+
+/// Loan types, form fields, custom questions and document checklists set by the master admin. The newest row is live.
+/// Each application copies what was live when it started (LoanApplication.flow), so a change never reaches a case in progress.
+model ApplicantFlowVersion {
+  id        Int      @id @default(autoincrement())
+  content   String // JSON, shape in src/config/applicantFlow.ts
+  note      String?
+  createdBy String
+  createdAt DateTime @default(now())
+}

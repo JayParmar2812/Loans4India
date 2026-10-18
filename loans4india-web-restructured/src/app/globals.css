@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Brand tokens — palette A "Violet + Mint" */
+:root {
+  --violet: #4b22d1;
+  --violet-deep: #2a1670;
+  --violet-soft: #ece8fd;
+  --mint: #35d6a0;
+  --mint-ink: #1a1240;
+  --ink: #1a1733;
+  --muted: #5d5a73;
+  --line: #e2e0ec;
+  --canvas: #f7f5ff;
+  --surface: #ffffff;
+  --danger: #b42318;
+  --success: #1f7a45;
+  /* Heading font; the master admin can switch it on the Website screen. */
+  --heading-font: "Baloo 2", "Mukta", system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-violet: var(--violet);
+  --color-violet-deep: var(--violet-deep);
+  --color-violet-soft: var(--violet-soft);
+  --color-mint: var(--mint);
+  --color-mint-ink: var(--mint-ink);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --font-display: var(--heading-font);
+  --font-sans: "Mukta", system-ui, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.12; text-wrap: balance; }
+
+.num { font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; border-radius: 6px; }
+
+/* Reusable bits */
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  background: var(--mint); color: var(--mint-ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
+  padding: .8rem 1.4rem; border-radius: 12px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -6px rgb(53 214 160 / .7); }
+.btn-primary:disabled { opacity: .6; transform: none; box-shadow: none; cursor: not-allowed; }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--violet); color: var(--violet);
+  font-family: var(--font-display); font-weight: 600;
+  padding: .7rem 1.2rem; border-radius: 12px; background: transparent;
+}
+
+.field-label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; font-weight: 500; }
+.field-input {
+  width: 100%; border: 1.5px solid var(--line); border-radius: 12px; background: #fff;
+  padding: .7rem .9rem; font-size: 1rem; color: var(--ink);
+}
+.field-input:focus { border-color: var(--violet); outline: none; box-shadow: 0 0 0 3px var(--violet-soft); }
+.field-error { color: var(--danger); font-size: .82rem; margin-top: .25rem; }
+
+input[type="range"] { accent-color: var(--violet); }
