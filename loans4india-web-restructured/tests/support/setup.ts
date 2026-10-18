@@ -5,7 +5,7 @@ import { vi } from "vitest";
 import { requestContext } from "./context";
 
 // A private copy of the migrated template database for this test file.
-const dir = path.resolve(__dirname, "../../.test-db");
+const dir = path.resolve(import.meta.dirname, "../../.test-db");
 mkdirSync(dir, { recursive: true });
 const db = path.join(dir, `t-${randomBytes(6).toString("hex")}.db`);
 copyFileSync(path.join(dir, "template.db"), db);

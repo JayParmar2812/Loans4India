@@ -1,104 +1,88 @@
-# LoansForIndia — customer website (Phase 1: acquisition)
+# Loans4India web platform (MVP1)
 
-Next.js 16 · TypeScript · Tailwind CSS 4 · Prisma 7 (SQLite locally, Postgres later) · Zod
+Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Prisma 7 (SQLite locally, Postgres later) · Zod · Vitest
 
-## What's here
+Loans4India is a **loan sourcing service (Virtual Corporate DSA), not a lender**. This app follows **Platform Flow v4 (Source of Truth)**:
+- an applicant applies once
+- staff check the file and pick one consented partner bank
+- a second person approves the package at the Ready-for-Bank gate
+- an authorised operator enters it on the bank's portal
+- bank status is recorded only from bank evidence
 
-The platform follows **Loans4India — Platform Flow v4 (Source of Truth)**: manual-first, one bank per application, staff do the bank-portal entry by hand. Gaps against v4 are tracked in `specs/platform-flow-v4-gaps.md` in the project files.
+MVP1 runs on **synthetic data** with TEST banks only. Project documents are in `docs/`: audit, plan, route inventory, security findings and progress log.
 
-| Area | Path |
-| --- | --- |
-| Homepage with a quick estimate (never an approval) | `/` |
-| Product pages | `/personal-loan`, `/business-loan` |
-| EMI calculator + quick estimate | `/emi-calculator` |
-| Start: loan amount + mobile → consent naming each partner bank | `/apply` → `POST /api/applications` |
-| Applicant's application: tracker, details form (autosave), documents, submit with declaration, Action needed tasks, re-consent, withdraw | `/documents/<secret link>` → `/api/documents/...` |
-| Control tower: queues (new, mine, files to review, pick a bank, gate, ready, with bank, stale, checks due, exceptions), SLA colours, owners | `/admin` |
-| Case workspace: review, tasks, flags, hold, bank selection, package checklist, Ready-for-Bank gate, operator portal entry with evidence, bank updates with second-person check, re-route or close, timeline incl. messages to send | `/admin/applications/<id>` |
-| Counts-only CSV (no personal data) | `/admin/export` |
-| Draft legal pages | `/about`, `/privacy`, `/terms`, `/grievance` |
+## Run it locally (Windows)
 
-Brand name, contacts and the "partners live" switch are in **`src/shared/config/brand.ts`**. Partner banks, their sourcing rules and field templates are in **`src/features/bank-submission/config/banks.ts`** (only TEST banks until a DSA agreement is signed). Roles and permissions are in **`src/features/staff/domain/rbac.ts`**.
-
-## Code layout
-
-Code is organised by feature (full guide: `specs/web-folder-structure.md` in the project files):
-
-- `src/app/`: routes only. `(public-site)`, `(applicant)` and `(bank-share)` are route groups and don't appear in URLs.
-- `src/features/<feature>/`: one folder per business feature (public-site, site-control, applicant-flow, apply, applications, applicant-portal, consent, documents, bank-submission, case-management, staff), each split into `domain/` (pure rules, reusable by a mobile app), `config/`, `server/` (`*.server.ts`), `actions/` (server actions) and `components/`.
-- `src/shared/`: brand config, database client, encryption, storage, formatting and the logo; no business logic.
-
-## Run it on your computer (Windows)
-
-Requires **Node.js 20.9+** (22 LTS recommended).
+Requires Node.js 24.7+ (Argon2id comes from Node's built-in `crypto`).
 
 ```powershell
-cd loans4india-web
-copy .env.example .env        # then set STAFF_USERS (or ADMIN_PASSWORD)
-npm install                   # also generates the Prisma client
-npx prisma migrate deploy     # creates or upgrades dev.db from prisma/migrations
+cd loans4india-web-restructured
+copy .env.example .env
+npm install                           # also generates the Prisma client
+npx prisma migrate deploy             # creates or upgrades dev.db
+npm run staff -- create jp SUPER_ADMIN "JP"   # prints a temporary password once
 npm run dev
 ```
 
-Open http://localhost:3000. Staff area: http://localhost:3000/admin (user/password from `.env`).
+- Staff: http://localhost:3000/admin. Sign in with the password, then scan the QR code with an authenticator app (TOTP). Every staff login needs MFA.
+- Applicants: http://localhost:3000/apply. In development, OTP codes are printed in the server console. Production has **no SMS provider until DLT registration is done**, so OTP fails closed there.
+- Synthetic walkthrough data (10 cases, 4 staff logins, 3 guide drafts): `npm run seed:synthetic`. It refuses to run in production or with `DATA_MODE=live`.
 
-### Master admin
+### Staff accounts (CLI)
 
-The **Super Admin** role is the master admin. It can do every action of every other role, on every case and every bank. It also has two screens of its own:
+`npm run staff -- import-env | create <user> <ROLE> "<Name>" | reset-password <user> | reset-mfa <user> | unlock <user> | list`
 
-- **Staff** (`/admin/staff`): add people, change their role, name and bank portal logins, set a new password, or disable a login. Accounts in `STAFF_USERS` show there but can only be changed in `.env`, so the master admin can't be locked out.
-- **Activity** (`/admin/activity`): every case event, staff change and website change, newest first, filterable by person.
-- **Website** (`/admin/site`): switch home sections, loan pages, the EMI calculator, an announcement banner and new applications on or off; edit, add, remove and reorder the site's text, menu and footer. It also builds extra pages from blocks (heading, text, image, list, questions, call to action, EMI calculator) at an address you choose, with drafts visible only through Preview; keeps an image library (JPG, PNG or WebP up to 2 MB, served from `/site-assets/<id>`); and sets the look (four brand colours checked for readable contrast, heading font, logo text). Saving publishes at once and keeps a version you can restore ("Original site" puts back the defaults in `src/features/site-control/config/siteContent.ts`). The "not a lender" notices, consent screen and legal pages are fixed, and text saying "eligible", "guaranteed" or "pre-approved" is refused.
-- **Loan types, form and documents** (`/admin/site/flow`, the second tab of Website): add loan types (each follows the personal or business form, with its own amount range), switch them on or off, and pick the partner banks that cover each one (a coverage change gives the consent screen a new bank-list version, so older consents show as outdated); rename, hide or require form fields and add your own questions (text, number, yes/no, choice), which staff see on the case; and edit each loan type's document checklist per way of earning, including new document types. Each application keeps the form, questions and checklist it started with (`LoanApplication.flow`), so a change reaches new applications only. Name, date of birth, PAN, loan amount and how they earn are always asked; PAN and masked Aadhaar stay required on every checklist with their standard wording; a loan type with applications can be switched off but not removed. Defaults are in `src/features/applicant-flow/config/applicantFlow.ts`.
+`STAFF_USERS` in `.env` is no longer a login. `import-env` copies it into the database once; afterwards, remove the passwords from `.env`.
 
-The two-person checks still apply to the master admin on a case: they can't approve a package they prepared, confirm a bank update they recorded, or enter a package they prepared.
+### Background jobs
 
-## Documents
+Schedule `npm run jobs` every 15 minutes (cron or Windows Task Scheduler). Each job is idempotent:
+- **dormancy:** reminder after 7 idle days, close as DORMANT at 30 days; Action-needed reminders at 2 and 5 days, close at 15 days (before the bank stage only)
+- **purge:** documents deleted at close + 90 days, personal details at close + 180 days, unless on legal hold; proof goes to `PurgeLog`
+- **messages:** queued applicant messages sent outside quiet hours (09:00–21:00 IST); never marked SENT without a provider
+- **housekeeping:** expired OTPs and sessions removed
 
-After the form, the applicant lands on a private upload page (`/documents/<token>`, valid 30 days and re-issued by staff from the case; only a hash of the token is stored). The checklist depends on the loan type and is defined in **`src/features/documents/domain/documents.ts`**:
+### Checks
 
-- **Salaried personal loan:** PAN, masked Aadhaar, 6 months' salary slips, 6-month salary-account statement (current address proof, Form 16, existing loans, photo optional)
-- **Self-employed personal loan:** PAN, masked Aadhaar, 2 years' ITR, 12-month bank statement, business/profession proof (current address proof, existing loans, photo optional)
-- **Business loan:** PAN, masked Aadhaar, business registration (GST/Udyam/Shop Act), business address proof, 2 years' ITR, 2 years' financials, 12-month current-account statement (GST returns, business PAN, firm/company documents incl. partners'/directors' KYC, current address proof, existing loans, photo optional)
+```powershell
+npm run check     # tsc --noEmit && eslint && vitest run
+npm run build
+```
 
-Each file is checked by its real contents (PDF/JPG/PNG only, ≤10 MB, no password-protected PDFs), virus-scanned, encrypted (AES-256-GCM) and stored under a random name in `./storage` (never in `public/`). Aadhaar is accepted only as a masked copy. Staff open documents through `/admin` (every view is logged), accept them or ask for a replacement with a reason; the applicant sees an Action needed task on the same link that unlocks only that document.
+The tests (`tests/`) run against a throwaway SQLite database built from the real migrations; they never touch `dev.db`. They cover:
+- **Unit:** finance maths, TOTP (RFC 6238), RBAC "cannot" lists for every role, open-redirect guard, JSON-LD escaping
+- **Integration:** OTP, IDOR, append-only triggers, staff MFA/lockout/sessions, CMS four-eyes publishing, support/data rights, legal holds, jobs
+- **End to end:** the full MVP1 journey from OTP to READY_FOR_BANK
 
-### From review to the bank (v4 sections 12-23)
+## What's where
 
-1. **Assign** one owner (Ops Manager). Intake checks only raise flags (duplicate PAN or mobile, many applications from one network); a person decides.
-2. **Review**: accept each file, ask to replace it (opens an Action needed task that unlocks only that document), or flag suspected tampering (case goes on hold; the applicant isn't told). Then **Pass review**.
-3. **Pick one bank** from those that pass three filters: the applicant consented to it, its agreement is active, and its published sourcing rules fit. Record why.
-4. **Prepare**: the bank's field template is filled from the application. A missing value is fixed by asking the applicant, never typed in. **Send to gate**.
-5. **Gate**: a second person runs eight checks and approves. The package (fields, documents, template version) is frozen with a hash.
-6. **Portal entry**: an Authorised DSA Operator holding that bank's portal login downloads the entry sheet, enters it on the bank portal, and records the bank reference with a screenshot and an attestation. If anything changed since approval, the case goes back to preparation.
-7. **Bank updates** are recorded only from evidence (MIS, bank email, portal screenshot). In-principle, sanction and disbursal count only after a second person confirms. After a rejection, re-route to another consented bank only for a bank-specific reason, at most twice; otherwise close.
+| Area | Routes |
+| --- | --- |
+| Public site | `/`, `/personal-loan`, `/business-loan`, `/how-it-works`, `/calculators` (+ `/emi-calculator`, `/calculators/how-much-can-i-borrow`, `/calculators/affordability`, `/calculators/interest`), `/faq`, `/guides`, `/contact`, `/about`, `/privacy`, `/terms`, `/grievance` |
+| Applicant | `/apply` (loan → OTP → consent), `/my` (OTP sign-in, applications), `/my/applications/<LFI-ref>` (details, documents, submit, tracker, Action needed, withdraw, marketing preference) |
+| Staff | `/admin` control tower and case workspace, `/admin/insights`, `/admin/support`, `/admin/lenders`, `/admin/content` (guides), `/admin/site` (website + applicant flow), `/admin/redirects`, `/admin/compliance`, `/admin/staff`, `/admin/activity` |
 
-No SMS/email provider is connected yet: messages to the applicant appear in the case timeline as "message to send by hand".
+Code is organised by feature: `src/features/<feature>/{domain,config,server,actions,components}`. Routes live in `src/app/` and shared utilities in `src/shared/`. Key files:
+- brand and data mode: `src/shared/config/brand.ts`
+- banks (TEST only): `src/features/bank-submission/config/banks.ts`
+- roles and permissions: `src/features/staff/domain/rbac.ts`
+- three status fields: `src/features/applications/domain/stages.ts`
 
-Environment (see `.env.example`):
-- `DOCUMENT_ENCRYPTION_KEY`: required in production (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Development falls back to a fixed dev-only key.
-- `CLAMSCAN_PATH`: path to ClamAV. Required in production (uploads are refused without it). In `npm run dev` uploads are accepted and marked "not virus-scanned (dev)".
+## Security model (summary)
 
-## Data model (prisma/schema.prisma)
+- **Staff:** Argon2id passwords, TOTP MFA, DB sessions (15 min idle, 12 h max), lockout after 5 failures, sessions revoked on role/password/MFA change. Permission + case scope + state are checked on the server for every action.
+- **Applicants:** OTP (5 min, 5 tries, 3 sends per 10 min). An application reference works only with an OTP session for the owning mobile.
+- **Edge and data integrity:**
+  - nonce CSP, HSTS (HTTPS only), frame-ancestors none, nosniff; private areas are `no-store` and `noindex`
+  - SQLite triggers make consent, audit, snapshot and bank-status records append-only
+  - PAN and account numbers are field-encrypted; documents are encrypted at rest with random names, type-checked by their bytes and virus-scanned (ClamAV required in production)
+- Details and open items: `docs/SECURITY_FINDINGS.md`.
 
-- **LoanApplication**: everything a customer starts. Application state (`stage`): ENQUIRY → CONSENT_PENDING → PROFILE_IN_PROGRESS → DOCUMENTS_PENDING → VERIFICATION_REVIEW ⇄ ACTION_NEEDED → APPLICATION_PREPARATION → INTERNAL_REVIEW → READY_FOR_BANK → SUBMITTED_TO_BANK → CLOSED (with a close reason), plus a separate hold. PAN and account number are encrypted.
-- **ApplicationSnapshot**: frozen copy of what was submitted (and each Action needed response), with a content hash.
-- **ApplicationTask / ApplicationFlag**: Action needed tasks and duplicate/fraud flags.
-- **BankAttempt**: one submission to one bank (selection, gate, frozen manifest and hash, bank reference, evidence).
-- **BankStatusEvent**: bank-confirmed status, only from evidence; append-only with second-person checks.
-- **ConsentRecord**: one append-only row per consent purpose, with the exact wording and version shown.
-- **ApplicationEvent**: append-only activity trail (created, duplicate attempt, stage changed, notes, document uploaded/removed/viewed/accepted/rejected, submitted).
-- **ApplicationDocument**: one uploaded file per row (slot, detected type, size, SHA-256, random storage key, status UPLOADED/ACCEPTED/REJECTED/REMOVED, scan result, reviewer).
-- **BankShare**: older share links for bank sales officers. Switched off (`BANK_SHARE_LINKS_ENABLED` in `src/features/bank-submission/config/banks.ts`) because v4 sends documents only through portal entry.
+## Before real customers use this (not doable in code)
 
-Duplicate protection: one open application per mobile and product; the existing reference is never revealed.
-
-## Before real customers use this
-
-- [ ] Legal review of consent text (`src/features/consent/domain/consent.ts`) and the draft legal pages
-- [ ] Replace Basic-auth admin with staff accounts + MFA (PAM, Milestone 2)
-- [ ] Move to Postgres (managed, India region) and set `DATABASE_URL`
-- [ ] Real support phone, grievance officer, company name in `brand.ts`
-- [ ] Mobile OTP verification (SMS provider) on the application
-- [ ] Only set `partnersLive: true` and list lenders after DSA agreements are signed
-- [ ] Final brand name (rename = edit `brand.ts` + logo)
+- [ ] Signed bank/master-DSA agreement; LIVE bank entries; `partnersLive` and the partner list in `brand.ts`
+- [ ] Counsel sign-off: consent text, privacy/terms/grievance pages, retention periods, LSP classification (all marked VERIFY)
+- [ ] DLT sender and templates plus an SMS provider (OTP and messages)
+- [ ] Postgres in an India region, KMS-managed keys, private object storage, ClamAV worker, WAF, shared rate-limit store, backups with a restore drill
+- [ ] Named Grievance Officer, registered company name, support phone and the final domain (`NEXT_PUBLIC_SITE_URL`)
+- [ ] External penetration test (v4 §44 Phase 2 gate); then `DATA_MODE=live`
