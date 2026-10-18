@@ -3,12 +3,14 @@ import { applicantApp } from "@/features/applications/server/applicant.server";
 import { editableSections, saveDetails } from "@/features/applications/server/details.server";
 import { portalState } from "@/features/applicant-portal/server/portal.server";
 import { consentState } from "@/features/consent/domain/consentState";
+import { sameOrigin } from "@/shared/security/request.server";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
 /** Autosave: the form sends one field (or a few) when the applicant leaves it. Validated again here. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
   const { token } = await params;
   const app = await applicantApp(token);
   if (!app || app.stage === "CLOSED") return NextResponse.json({ ok: false, error: "This link has expired or is not valid." }, { status: 404, headers: noStore });

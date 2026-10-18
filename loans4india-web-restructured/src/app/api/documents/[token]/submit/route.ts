@@ -4,6 +4,7 @@ import { applicantApp, freezeSnapshot, intakeChecks, queueMessage } from "@/feat
 import { portalState } from "@/features/applicant-portal/server/portal.server";
 import { consentState } from "@/features/consent/domain/consentState";
 import { APPLICANT_EDITABLE } from "@/features/applications/domain/stages";
+import { sameOrigin } from "@/shared/security/request.server";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -13,6 +14,7 @@ const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" 
  * Server-side completeness check, declaration, frozen snapshot, then the review queue. Idempotent.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
   const { token } = await params;
   const app = await applicantApp(token);
   if (!app || app.stage === "CLOSED") return NextResponse.json({ ok: false, error: "This link has expired or is not valid." }, { status: 404, headers: noStore });

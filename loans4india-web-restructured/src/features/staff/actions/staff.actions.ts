@@ -5,7 +5,8 @@ import { prisma } from "@/shared/db/db";
 import { BANKS } from "@/features/bank-submission/config/banks";
 import { can, isRole, ROLES } from "@/features/staff/domain/rbac";
 import { actorOf, currentStaff } from "@/features/staff/server/staff.server";
-import { envStaff, hashPassword, MIN_PASSWORD } from "@/features/staff/server/staffAuth";
+import { hashPassword, passwordProblem } from "@/shared/security/password.server";
+import { revokeStaffSessions } from "@/features/staff/server/staffSession.server";
 import type { ActionResult } from "@/features/case-management/actions/case.actions";
 
 const USERNAME = /^[a-z0-9._-]{3,32}$/;
@@ -37,13 +38,14 @@ export async function createStaff(_prev: ActionResult, fd: FormData): Promise<Ac
   if (!USERNAME.test(username)) return fail("Username: 3–32 lower-case letters, numbers, dot, dash or underscore.");
   if (!name) return fail("Enter the person's name.");
   if (!isRole(role)) return fail("Pick a role.");
-  if (password.length < MIN_PASSWORD) return fail(`Password must be at least ${MIN_PASSWORD} characters.`);
-  if (envStaff().some((s) => s.username === username) || (await prisma.staffAccount.findUnique({ where: { username } }))) return fail("That username is taken.");
+  const weak = passwordProblem(password, username);
+  if (weak) return fail(weak);
+  if (await prisma.staffAccount.findUnique({ where: { username } })) return fail("That username is taken.");
   const banks = readBanks(fd);
-  await prisma.staffAccount.create({ data: { username, name, role, banks: JSON.stringify(banks), passwordHash: hashPassword(password), createdBy: actorOf(user) } });
+  await prisma.staffAccount.create({ data: { username, name, role, banks: JSON.stringify(banks), passwordHash: await hashPassword(password), passwordChangedAt: new Date(), createdBy: actorOf(user) } });
   await log("STAFF_CREATED", actorOf(user), username, { name, role, banks });
   revalidatePath("/admin/staff");
-  return { ok: true, message: `${name} can now sign in as ${username} (${ROLES[role]}).` };
+  return { ok: true, message: `${name} can now sign in as ${username} (${ROLES[role]}). They set up an authenticator app at their first sign-in.` };
 }
 
 export async function updateStaff(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
@@ -51,13 +53,14 @@ export async function updateStaff(_prev: ActionResult, fd: FormData): Promise<Ac
   if (!user) return fail("Only the master admin can manage staff.");
   const username = String(fd.get("username") ?? "");
   const row = await prisma.staffAccount.findUnique({ where: { username } });
-  if (!row) return fail("Accounts from the .env file can only be changed in .env.");
+  if (!row) return fail("Staff member not found.");
   const decision = String(fd.get("decision") ?? "save");
 
   if (decision === "disable" || decision === "enable") {
     if (username === user.username) return fail("You can't disable your own login.");
     const active = decision === "enable";
-    await prisma.staffAccount.update({ where: { username }, data: { active } });
+    await prisma.staffAccount.update({ where: { username }, data: { active, failedLogins: 0, lockedUntil: null } });
+    if (!active) await revokeStaffSessions(username);
     await log(active ? "STAFF_ENABLED" : "STAFF_DISABLED", actorOf(user), username);
     revalidatePath("/admin/staff");
     return { ok: true, message: active ? `${row.name} can sign in again.` : `${row.name} can no longer sign in. Their cases keep them as owner until you reassign.` };
@@ -65,11 +68,22 @@ export async function updateStaff(_prev: ActionResult, fd: FormData): Promise<Ac
 
   if (decision === "password") {
     const password = String(fd.get("password") ?? "");
-    if (password.length < MIN_PASSWORD) return fail(`Password must be at least ${MIN_PASSWORD} characters.`);
-    await prisma.staffAccount.update({ where: { username }, data: { passwordHash: hashPassword(password) } });
+    const weak = passwordProblem(password, username);
+    if (weak) return fail(weak);
+    await prisma.staffAccount.update({ where: { username }, data: { passwordHash: await hashPassword(password), passwordChangedAt: new Date(), failedLogins: 0, lockedUntil: null } });
+    await revokeStaffSessions(username);
     await log("STAFF_PASSWORD_RESET", actorOf(user), username);
     revalidatePath("/admin/staff");
     return { ok: true, message: `New password set for ${row.name}. Share it with them directly.` };
+  }
+
+  if (decision === "mfa") {
+    if (username === user.username) return fail("Ask another master admin to reset your own authenticator.");
+    await prisma.staffAccount.update({ where: { username }, data: { mfaSecretEnc: null, mfaEnabledAt: null, mfaLastStep: null } });
+    await revokeStaffSessions(username);
+    await log("STAFF_MFA_RESET", actorOf(user), username);
+    revalidatePath("/admin/staff");
+    return { ok: true, message: `${row.name} will set up a new authenticator at their next sign-in.` };
   }
 
   const name = String(fd.get("name") ?? "").trim();
@@ -77,8 +91,11 @@ export async function updateStaff(_prev: ActionResult, fd: FormData): Promise<Ac
   if (!name) return fail("Enter the person's name.");
   if (!isRole(role)) return fail("Pick a role.");
   if (username === user.username && role !== row.role) return fail("You can't change your own role.");
+
   const banks = readBanks(fd);
   await prisma.staffAccount.update({ where: { username }, data: { name, role, banks: JSON.stringify(banks) } });
+  // A change of role or bank access takes effect at once: their current sessions end.
+  if (role !== row.role || JSON.stringify(banks) !== row.banks) await revokeStaffSessions(username);
   await log("STAFF_UPDATED", actorOf(user), username, { from: { name: row.name, role: row.role, banks: JSON.parse(row.banks) }, to: { name, role, banks } });
   revalidatePath("/admin/staff");
   return { ok: true, message: `Saved ${name}.` };

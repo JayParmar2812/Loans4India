@@ -2,46 +2,53 @@ import Link from "next/link";
 import { brand } from "@/shared/config/brand";
 import { Logo } from "@/shared/ui/Logo";
 
-export function SiteFooter({ columns, wordmark }: { columns: { title: string; links: { href: string; label: string }[] }[]; wordmark: [string, string] }) {
+export function SiteFooter({ columns }: { columns: { title: string; links: { href: string; label: string }[] }[] }) {
   return (
-    <footer className="bg-violet-deep text-white/80 mt-20">
-      <div style={{ "--cols": Math.max(1, columns.length) } as React.CSSProperties} className="mx-auto max-w-6xl px-4 py-12 grid gap-10 md:grid-cols-[1.4fr_repeat(var(--cols),minmax(0,1fr))]">
-        <div className="space-y-3">
-          <Logo inverted wordmark={wordmark} />
-          <p className="text-sm max-w-sm">{brand.tagline} <span lang="hi">{brand.taglineHi}</span></p>
-        </div>
-        {columns.map((c, i) => <FooterCol key={`${i}-${c.title}`} title={c.title} links={c.links} />)}
-      </div>
-      <div className="border-t border-white/10">
-        <div className="mx-auto max-w-6xl px-4 py-6 text-xs leading-relaxed space-y-2 text-white/65">
-          <p>
-            <strong className="text-white/85">Important:</strong> {brand.name} is a loan sourcing service, not a lender. We don&apos;t charge you any fee.
-            We act as a Direct Selling Agent (DSA) for partner banks and NBFCs. We do not lend money, approve loans or collect repayments. All loans are offered,
-            approved, sanctioned and disbursed solely by the lending bank or NBFC, at its discretion and on its terms.
-            Loan estimates on this website are indicative and are not an offer or approval.
+    <footer className="mt-20 border-t border-line bg-white">
+      <div className="mx-auto max-w-6xl px-4 py-12 grid gap-10 md:grid-cols-[1.3fr_2fr]">
+        <div className="space-y-4">
+          <Logo className="h-9 w-auto" />
+          <p className="text-sm text-muted max-w-sm">
+            {brand.tagline} <span lang="hi" className="block mt-1">{brand.taglineHi}</span>
           </p>
-          {brand.partnersLive && brand.partners.length > 0 && (
+          <div className="text-sm space-y-1">
+            <p><span className="text-muted">Support:</span> <a className="text-violet underline underline-offset-4" href={`mailto:${brand.supportEmail}`}>{brand.supportEmail}</a></p>
+            <p className="text-muted">{brand.supportHours}</p>
+          </div>
+        </div>
+        <div className="grid gap-8 grid-cols-2 sm:grid-cols-3">
+          {columns.map((c, i) => (
+            <div key={`${i}-${c.title}`}>
+              <h2 className="font-display text-sm font-bold text-ink mb-3">{c.title}</h2>
+              <ul className="space-y-2 text-sm">
+                {c.links.map((l, j) => (
+                  <li key={`${j}-${l.href}`}><Link href={l.href} className="text-muted hover:text-violet">{l.label}</Link></li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="border-t border-line bg-canvas">
+        <div className="mx-auto max-w-6xl px-4 py-6 text-xs leading-relaxed space-y-2 text-muted">
+          <p>
+            <strong className="text-ink">Important:</strong> {brand.name} is a loan sourcing service, not a lender. We don&apos;t charge you any fee.
+            We act as a Direct Selling Agent (DSA) for partner banks and NBFCs. We do not lend money, approve loans or collect repayments. Every loan is
+            assessed, approved, sanctioned and disbursed only by the lending bank or NBFC, at its discretion and on its terms.
+            Estimates on this website are indicative and are not an offer or an approval. We never ask for money, an OTP or a PIN on a call.
+          </p>
+          {brand.partnersLive && brand.partners.length > 0 ? (
             <p>Lending partners: {brand.partners.map((p) => `${p.name} (${p.type})`).join(", ")}.</p>
+          ) : (
+            <p>Partner banks and NBFCs are named here and on the consent screen once our agreements with them are signed.</p>
           )}
           <p>
-            Grievance Officer: {brand.grievanceOfficer.name} · {brand.grievanceOfficer.email}
+            Grievance Officer: {brand.grievanceOfficer.name} · <a className="underline" href={`mailto:${brand.grievanceOfficer.email}`}>{brand.grievanceOfficer.email}</a> ·{" "}
+            <Link className="underline" href="/grievance">How complaints are handled</Link>
           </p>
           <p>© {new Date().getFullYear()} {brand.legalEntity}. All rights reserved.</p>
         </div>
       </div>
     </footer>
-  );
-}
-
-function FooterCol({ title, links }: { title: string; links: { href: string; label: string }[] }) {
-  return (
-    <div>
-      <h3 className="font-display text-white text-base mb-3">{title}</h3>
-      <ul className="space-y-2 text-sm">
-        {links.map((l, i) => (
-          <li key={`${i}-${l.href}`}><Link href={l.href} className="hover:text-mint">{l.label}</Link></li>
-        ))}
-      </ul>
-    </div>
   );
 }

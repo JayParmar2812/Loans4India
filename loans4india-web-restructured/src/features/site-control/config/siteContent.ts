@@ -49,6 +49,7 @@ export type ProductSiteContent = z.infer<typeof productSchema>;
 export const RESERVED_SLUGS = [
   "about", "admin", "api", "apply", "business-loan", "documents", "emi-calculator", "grievance", "personal-loan",
   "privacy", "share", "site-assets", "sitemap.xml", "robots.txt", "terms", "favicon.ico", "_next",
+  "calculators", "how-it-works", "faq", "guides", "contact", "my", "brand", "opengraph-image", "icon",
 ];
 const slug = z
   .string()
@@ -82,7 +83,7 @@ const pageSchema = z.object({
 export type SitePage = z.infer<typeof pageSchema>;
 
 const colour = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Colours are written like #4b22d1");
-export const HEADING_FONTS = { "Baloo 2": "Baloo 2 (rounded, current)", Mukta: "Mukta (same as body text)" } as const;
+export const HEADING_FONTS = { "Plus Jakarta Sans": "Plus Jakarta Sans (current)", "Baloo 2": "Baloo 2 (rounded)", Mukta: "Mukta" } as const;
 const themeSchema = z.object({
   main: colour,
   dark: colour,
@@ -160,6 +161,7 @@ export function linkIsLive(h: string, c: SiteContent): boolean {
   if (path === PRODUCT_PATHS.BUSINESS_LOAN) return c.products.BUSINESS_LOAN.enabled;
   if (path === "/emi-calculator") return c.tools.emiCalculator;
   if (h === "/#how-it-works") return c.home.how.show;
+  if (path === "/calculators") return c.tools.emiCalculator;
   const page = c.pages.find((p) => `/${p.slug}` === path);
   if (page) return page.published;
   return true;
@@ -172,8 +174,9 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
   nav: [
     { href: "/personal-loan", label: "Personal Loan" },
     { href: "/business-loan", label: "Business Loan" },
-    { href: "/emi-calculator", label: "EMI Calculator" },
-    { href: "/#how-it-works", label: "How it works" },
+    { href: "/calculators", label: "Calculators" },
+    { href: "/how-it-works", label: "How it works" },
+    { href: "/guides", label: "Guides" },
   ],
   home: {
     order: [...HOME_SECTIONS],
@@ -226,7 +229,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
         { q: "Do I have to pay anything to apply?", a: "No. Applying through us is free for you. Lenders may charge their own processing fees, which they will show you in the loan's Key Fact Statement before you sign. Never pay anyone upfront to 'get a loan approved'." },
         { q: "Will checking my options affect my credit score?", a: "No. Our quick estimate uses only the details you enter. A lender may check your credit report when it processes your application, with your consent." },
         { q: "What documents will I need?", a: "For salaried applicants: PAN, masked Aadhaar, the last 6 months' salary slips and 6 months' salary-account statement. For self-employed and business loans: PAN, masked Aadhaar, business registration (GST, Udyam or Shop Act), 2 years' ITR and 12 months' bank statements. You upload them securely in your application, and we check them before anything goes to a bank." },
-        { q: "How long does it take?", a: "We review your submitted application within one working day. After that, timelines depend on the bank. Many personal loans are decided within a few working days once documents are complete." },
+        { q: "How long does it take?", a: "Our team aims to start reviewing a submitted application within one working day. Once it reaches the bank, the timeline is the bank's: it depends on its own checks and on how quickly any questions are answered." },
         { q: "How is my data protected?", a: "Your details are encrypted, accessed only by authorised staff, and shared only with lenders for your application, with your consent. You can ask us to stop processing your data anytime." },
       ],
     },
@@ -235,28 +238,28 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
   products: {
     PERSONAL_LOAN: {
       enabled: true,
-      metaTitle: "Personal Loan — compare lenders, apply once",
+      metaTitle: "Personal Loan: apply once, we submit to a suitable bank",
       metaDescription: "Personal loans from ₹50,000 to ₹40 lakh for salaried and self-employed borrowers. Get a quick estimate and apply once. Free for you.",
       eyebrow: "Personal Loan",
       title: "A personal loan from a lender that fits you",
-      intro: "Medical bills, a wedding, a new home setup or clearing expensive debt: tell us your need once and we'll match you with suitable banks and NBFCs.",
+      intro: "Medical bills, a wedding, a new home setup or clearing expensive debt: tell us your need once. We check your file and submit it to one suitable partner bank or NBFC from the list you agree to.",
       highlights: [
         { k: "Amount", v: "₹50K–40L" },
         { k: "Tenure", v: "1–7 years" },
         { k: "Collateral", v: "None" },
-        { k: "Interest", v: "From ~10.5%*" },
+        { k: "Fee from you", v: "₹0" },
       ],
       whoCanApply: [
         "Indian resident aged 21 to 60",
         "Salaried with ₹15,000+ monthly take-home, or self-employed with regular income",
         "At least 6 months with current employer (salaried)",
-        "A credit score around 700+ improves your chances",
+        "Each bank checks your credit history itself; we never pull your credit report",
       ],
       documents: ["PAN card", "Aadhaar card (masked)", "Last 6 months' salary slips", "Last 6 months' bank statement", "Photograph"],
       faq: [
-        { q: "What interest rate will I get?", a: "Rates depend on the lender, your income, employer and credit score. Lenders' published personal loan rates commonly start around 10–11% a year for strong profiles and go higher for others. You'll see the exact rate and APR in the lender's Key Fact Statement before you accept." },
-        { q: "Can I get a loan with a low credit score?", a: "It's harder but sometimes possible with lenders that serve thinner or lower scores, usually at higher rates. Apply and our expert will tell you honestly what's realistic." },
-        { q: "Can I prepay or close my loan early?", a: "Most lenders allow it, sometimes with a foreclosure fee. We'll point this out when you compare options." },
+        { q: "What interest rate will I get?", a: "Only the bank sets your rate, based on its own assessment. We don't quote or promise rates. Before you accept a loan, the bank must give you a Key Fact Statement showing the rate, all fees and the APR (the all-in yearly cost)." },
+        { q: "Can I apply with a low credit score?", a: "Yes, you can apply. Each bank decides using its own credit checks, so nobody can tell you in advance whether it will approve. We never pull your credit report ourselves." },
+        { q: "Can I prepay or close my loan early?", a: "Prepayment rules and any foreclosure charges are set by the bank and listed in its Key Fact Statement and loan agreement. Read them before you sign." },
       ],
     },
     BUSINESS_LOAN: {
@@ -265,7 +268,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
       metaDescription: "Business loans for proprietors, partnerships and professionals. Get a quick estimate and apply once. Free for you.",
       eyebrow: "Business Loan",
       title: "Funds to run and grow your business",
-      intro: "Stock, machinery, a second outlet or just smoother cash flow. We match MSMEs and professionals with lenders that understand their business.",
+      intro: "Stock, machinery, a second outlet or just smoother cash flow. Apply once: we check your documents and submit your file to one suitable partner bank or NBFC from the list you agree to.",
       highlights: [
         { k: "Amount", v: "₹1L–1Cr+" },
         { k: "Tenure", v: "1–5 years" },
@@ -281,7 +284,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
       documents: ["PAN (individual & business)", "Aadhaar (masked)", "GST registration / Udyam certificate", "Last 2 years' ITR with financials", "Last 12 months' bank statements"],
       faq: [
         { q: "Do I need collateral?", a: "Not always. Many lenders offer unsecured business loans up to a limit; larger amounts may need property or other security." },
-        { q: "I'm a new business. Can I apply?", a: "Some lenders consider businesses with 1 year of vintage. Share your details and we'll tell you which options are realistic." },
+        { q: "I'm a new business. Can I apply?", a: "Yes. Banks set their own minimum business age. We check your file against each partner bank's published sourcing rules before choosing where to submit it." },
         { q: "How is the loan amount decided?", a: "Lenders look at turnover, profit, banking behaviour, existing debt and credit history. Our team helps present your file clearly." },
       ],
     },
@@ -290,13 +293,13 @@ export const DEFAULT_SITE_CONTENT: SiteContent = siteContentSchema.parse({
   footer: {
     columns: [
       { title: "Loans", links: [{ href: "/personal-loan", label: "Personal Loan" }, { href: "/business-loan", label: "Business Loan" }, { href: "/apply", label: "Start your application" }] },
-      { title: "Tools", links: [{ href: "/emi-calculator", label: "EMI Calculator" }, { href: "/emi-calculator#eligibility", label: "Quick estimate" }] },
-      { title: "Company", links: [{ href: "/about", label: "About us" }, { href: "/privacy", label: "Privacy Policy" }, { href: "/terms", label: "Terms of Use" }, { href: "/grievance", label: "Grievance Redressal" }] },
+      { title: "Tools & help", links: [{ href: "/calculators", label: "Loan calculators" }, { href: "/emi-calculator", label: "EMI Calculator" }, { href: "/guides", label: "Guides" }, { href: "/faq", label: "FAQs" }, { href: "/how-it-works", label: "How it works" }] },
+      { title: "Company", links: [{ href: "/about", label: "About us" }, { href: "/contact", label: "Contact & support" }, { href: "/privacy", label: "Privacy Policy" }, { href: "/terms", label: "Terms of Use" }, { href: "/grievance", label: "Grievance Redressal" }] },
     ],
   },
   pages: [],
-  // Palette A "Violet + Mint" from src/app/globals.css.
-  theme: { main: "#4b22d1", dark: "#2a1670", light: "#ece8fd", accent: "#35d6a0", headingFont: "Baloo 2", logo: [brand.wordmark[0], brand.wordmark[1]] },
+  // Sampled from the Mint Smile logo; matches src/app/globals.css.
+  theme: { main: "#3e1dc8", dark: "#24107a", light: "#efecfd", accent: "#36d49f", headingFont: "Plus Jakarta Sans", logo: [brand.wordmark[0], brand.wordmark[1]] },
 });
 
 /**
@@ -348,7 +351,7 @@ export function themeProblems(t: SiteTheme): string[] {
     ["White text on the dark colour (footer, closing banner)", "#ffffff", t.dark],
     ["Main colour text on white (links, buttons)", t.main, "#ffffff"],
     ["Dark colour text on the light colour (headings on tinted sections)", t.dark, t.light],
-    ["Button text on the accent colour", "#1a1240", t.accent],
+    ["Button text on the accent colour", "#0f1f1a", t.accent],
   ];
   return pairs.filter(([, fg, bg]) => contrast(fg, bg) < 4.5).map(([what, fg, bg]) => `${what} is hard to read (${contrast(fg, bg).toFixed(1)}:1, needs 4.5:1)`);
 }

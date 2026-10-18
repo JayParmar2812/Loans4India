@@ -1,13 +1,14 @@
 import "server-only";
 import { headers } from "next/headers";
 import type { StaffUser } from "@/features/staff/domain/rbac";
-import { staffDirectory, verifyBasic } from "./staffAuth";
+import { staffDirectory } from "./staffAuth";
+import { sessionStaff } from "./staffSession.server";
 
-export { staffDirectory, verifyBasic };
+export { staffDirectory };
 
-/** The signed-in staff member, re-verified on every call (never trust a header we didn't check). */
+/** The signed-in staff member, re-verified against the session table on every call (never trust the browser). */
 export async function currentStaff(): Promise<StaffUser | null> {
-  return verifyBasic((await headers()).get("authorization"));
+  return sessionStaff();
 }
 
 /** Audit actor string, e.g. "staff:ravi". */

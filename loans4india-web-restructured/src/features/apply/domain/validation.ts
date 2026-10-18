@@ -21,19 +21,24 @@ const rupees = (min: number, max: number, label: string) =>
     .min(min, `${label} must be at least ₹${min.toLocaleString("en-IN")}`)
     .max(max, `${label} looks too high — please check`);
 
+/** An Indian mobile, normalised to 10 digits (a leading +91, 91 or 0 is dropped). */
+export const mobileSchema = z
+  .string()
+  .trim()
+  .max(20)
+  .transform((s) => s.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, ""))
+  .pipe(z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"));
+
 /**
- * Registration (Platform Flow v4, section 4): loan type, amount and mobile, then the one consent screen.
+ * Registration (Platform Flow v4, section 4): loan type, amount and the OTP-verified mobile, then the one consent screen.
  * Everything else is collected after consent, in the application details form (src/features/applications/domain/profile.ts).
  */
 export const registrationSchema = z.object({
   /** A loan type id; the route checks it is open in the live flow. */
   product: z.string().regex(/^[A-Z][A-Z0-9_]{2,39}$/, "Pick a loan type"),
   loanAmount: rupees(10000, 5_00_00_000, "Loan amount"),
-  mobile: z
-    .string()
-    .trim()
-    .transform((s) => s.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, ""))
-    .pipe(z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number")),
+  /** Must be the mobile the applicant just verified by OTP (the route compares it with the session). */
+  mobile: mobileSchema,
   /** The required tick: processing, sharing with the named banks, service messages. */
   consentRequired: z.literal(true, { error: "This consent is needed to process your application" }),
   consentMarketing: z.boolean().default(false),

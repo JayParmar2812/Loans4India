@@ -42,7 +42,7 @@ export default async function StaffPage() {
           <label><span className="field-label">Username</span><input name="username" className="field-input" autoComplete="off" required /></label>
           <label><span className="field-label">Name</span><input name="name" className="field-input" required /></label>
           <label><span className="field-label">Role</span><select name="role" className="field-input" defaultValue="OPS_EXECUTIVE">{roleOptions}</select></label>
-          <label><span className="field-label">Password (at least {MIN_PASSWORD} characters)</span><input name="password" type="password" className="field-input" autoComplete="new-password" required /></label>
+          <label><span className="field-label">Temporary password (at least {MIN_PASSWORD} characters)</span><input name="password" type="password" className="field-input" autoComplete="new-password" required /></label>
           <div className="sm:col-span-2"><BankBoxes /></div>
         </ActionForm>
       </section>
@@ -58,10 +58,11 @@ export default async function StaffPage() {
               {!p.active && <span className="text-xs rounded-full bg-red-50 text-red-700 px-2 py-0.5">disabled</span>}
               {p.username === user.username && <span className="text-xs text-muted">you</span>}
               <span className="text-xs text-muted">{openCases(p.username)} open cases</span>
+              <span className={`text-xs rounded-full px-2 py-0.5 ${p.mfaEnabled ? "bg-mint-soft text-mint-ink" : "bg-amber-100 text-amber-900"}`}>{p.mfaEnabled ? "MFA on" : "MFA not set up yet"}</span>
+              {p.locked && <span className="text-xs rounded-full bg-red-50 text-red-700 px-2 py-0.5">locked after failed sign-ins</span>}
+              <span className="text-xs text-muted">{p.lastLoginAt ? `last sign-in ${p.lastLoginAt.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}` : "never signed in"}</span>
             </div>
-            {p.source === "env" ? (
-              <p className="text-sm text-muted">Set in the .env file (STAFF_USERS), so it can only be changed there. This keeps the master admin from being locked out.</p>
-            ) : (
+            {(
               <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
                 <ActionForm action={updateStaff} hidden={{ username: p.username }} buttons={[{ label: "Save" }]} className="grid gap-3 sm:grid-cols-2">
                   <label><span className="field-label">Name</span><input name="name" className="field-input" defaultValue={p.name} required /></label>
@@ -72,6 +73,14 @@ export default async function StaffPage() {
                   <ActionForm action={updateStaff} hidden={{ username: p.username }} buttons={[{ label: "Set new password", value: "password", tone: "ghost" }]}>
                     <input name="password" type="password" className="field-input" placeholder="New password" autoComplete="new-password" aria-label={`New password for ${p.name}`} />
                   </ActionForm>
+                  {p.username !== user.username && p.mfaEnabled && (
+                    <ActionForm
+                      action={updateStaff}
+                      hidden={{ username: p.username }}
+                      confirm={`Reset ${p.name}'s authenticator? They will set up a new one at their next sign-in.`}
+                      buttons={[{ label: "Reset authenticator", value: "mfa", tone: "ghost" }]}
+                    />
+                  )}
                   {p.username !== user.username && (
                     <ActionForm
                       action={updateStaff}

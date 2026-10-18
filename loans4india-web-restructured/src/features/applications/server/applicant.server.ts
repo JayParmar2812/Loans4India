@@ -5,6 +5,8 @@ import { prisma } from "@/shared/db/db";
 import { hashToken } from "@/features/applicant-portal/server/uploadToken.server";
 import { detailValues } from "./details.server";
 import { getLiveFlow } from "@/features/applicant-flow/server/applicantFlow.server";
+import { applicantMobile } from "@/features/applicant-auth/server/applicantSession.server";
+import { brand } from "@/shared/config/brand";
 
 type Tx = Prisma.TransactionClient;
 
@@ -16,33 +18,63 @@ export const APPLICANT_INCLUDE = {
   bankStatuses: { orderBy: { createdAt: "asc" } },
 } satisfies Prisma.LoanApplicationInclude;
 
-/** The application behind the applicant's secret link, or null if invalid or expired. Closed applications stay readable. */
-export async function applicantApp(token: string) {
-  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
-  const app = await prisma.loanApplication.findUnique({ where: { uploadTokenHash: hashToken(token) }, include: APPLICANT_INCLUDE });
-  if (!app || !app.uploadTokenExpiresAt || app.uploadTokenExpiresAt < new Date()) return null;
+/** Applicant-facing reference, e.g. LFI-7K3P9Q (no 0/O/1/I/L). */
+export const REFERENCE_RE = /^LFI-[2-9A-HJKMNP-Z]{6}$/;
+
+/**
+ * The application an applicant may act on, or null. Two ways in:
+ *  - a reference (LFI-XXXXXX) plus an OTP session for the same mobile (Platform Flow v4, section 4);
+ *  - the older secret link token (staff can still issue one by hand while SMS isn't connected).
+ * Object-level check: a reference alone is never enough, the session's verified mobile must own the application.
+ * Closed applications stay readable; purged ones don't exist any more for the applicant.
+ */
+export async function applicantApp(key: string) {
+  let app;
+  if (REFERENCE_RE.test(key)) {
+    const mobile = await applicantMobile();
+    if (!mobile) return null;
+    app = await prisma.loanApplication.findUnique({ where: { reference: key }, include: APPLICANT_INCLUDE });
+    if (!app || app.mobile !== mobile) return null;
+  } else {
+    if (!/^[A-Za-z0-9_-]{40,60}$/.test(key)) return null;
+    app = await prisma.loanApplication.findUnique({ where: { uploadTokenHash: hashToken(key) }, include: APPLICANT_INCLUDE });
+    if (!app || !app.uploadTokenExpiresAt || app.uploadTokenExpiresAt < new Date()) return null;
+  }
+  if (app.purgedAt) return null;
+  // Dormancy timers count from the applicant's last visit (section 26); one write per hour at most.
+  if (!app.lastApplicantAt || Date.now() - app.lastApplicantAt.getTime() > 3600e3) {
+    await prisma.loanApplication.update({ where: { id: app.id }, data: { lastApplicantAt: new Date() } });
+  }
   // The live flow names the banks on a re-consent screen; the application's own flow decides its form and checklist.
   return { ...app, live: await getLiveFlow() };
 }
 export type ApplicantApp = NonNullable<Awaited<ReturnType<typeof applicantApp>>>;
 
 /**
- * Applicant-facing messages (section 42). No SMS/email provider is connected yet, so each message is
- * recorded as due in the timeline for staff to send by hand. Messages carry only the reference, never personal details.
+ * Applicant-facing messages (section 42). Each one is recorded as due in the timeline (staff see it) and queued in the
+ * delivery log; `npm run jobs` sends queued messages through the SMS provider outside quiet hours. A message is never
+ * marked SENT unless a provider accepted it. Messages carry only the reference and a sign-in link, never personal details.
  */
 export async function queueMessage(tx: Tx, applicationId: string, template: string, vars: Record<string, string> = {}) {
   await tx.applicationEvent.create({ data: { applicationId, type: "MESSAGE_DUE", actor: "system", detail: JSON.stringify({ template, ...vars }) } });
+  const render = MESSAGE_TEMPLATES[template];
+  const app = await tx.loanApplication.findUnique({ where: { id: applicationId }, select: { mobile: true } });
+  if (!render || !app) return;
+  await tx.messageLog.create({
+    data: { applicationId, template, channel: "SMS", recipient: `******${app.mobile.slice(-4)}`, body: `${render(vars)} ${brand.siteUrl}/my -${brand.name}` },
+  });
 }
 
 export const MESSAGE_TEMPLATES: Record<string, (v: Record<string, string>) => string> = {
-  RECEIVED: (v) => `Application ${v.reference} received and under review. Sign in with your link to see progress.`,
-  ACTION_NEEDED: (v) => `Action needed on application ${v.reference}. Please open your application link to see what's needed.`,
-  RE_CONSENT: (v) => `Please review and confirm the updated consent for application ${v.reference}.`,
-  SUBMITTED_TO_BANK: (v) => `Your application has been submitted to ${v.bank}. Reference: ${v.reference}.`,
-  BANK_MILESTONE: (v) => `Update on application ${v.reference}: ${v.status}. Open your application link for details.`,
-  REROUTED: (v) => `${v.fromBank} could not approve application ${v.reference}; we are now submitting it to ${v.toBank}.`,
-  DISBURSED: (v) => `Your loan from ${v.bank} has been disbursed (application ${v.reference}).`,
-  CLOSED: (v) => `Application ${v.reference} is closed.`,
+  RECEIVED: (v) => `Application ${v.reference} received and under review. Sign in with your mobile to see progress:`,
+  ACTION_NEEDED: (v) => `Action needed on application ${v.reference}. Sign in with your mobile to see what's needed:`,
+  RE_CONSENT: (v) => `Please review and confirm the updated consent for application ${v.reference}. Sign in:`,
+  SUBMITTED_TO_BANK: (v) => `Your application has been submitted to ${v.bank}. Reference: ${v.reference}. Track it:`,
+  BANK_MILESTONE: (v) => `Update on application ${v.reference}: ${v.status}. Details:`,
+  REROUTED: (v) => `${v.fromBank} could not approve application ${v.reference}; we are now submitting it to ${v.toBank}. Track it:`,
+  DISBURSED: (v) => `Your loan from ${v.bank} has been disbursed (application ${v.reference}). Details:`,
+  CLOSED: (v) => `Application ${v.reference} is closed. Details:`,
+  REMINDER: (v) => `Your application ${v.reference} isn't finished yet. Continue where you left off:`,
 };
 
 /** Freeze what the applicant submitted: field values (identifiers masked) and document versions, with a content hash. */

@@ -17,6 +17,7 @@ export const ROLES = {
   COMPLIANCE: "Compliance & Audit",
   FRAUD_RISK: "Fraud & Risk",
   SUPPORT: "Customer Support",
+  CONTENT_EDITOR: "Content Editor",
 } as const;
 export type Role = keyof typeof ROLES;
 export const isRole = (r: string): r is Role => r in ROLES;
@@ -45,14 +46,22 @@ export type Permission =
   | "export.counts"
   | "audit.view"
   | "staff.manage"
-  | "site.manage";
+  | "site.manage"
+  | "support.view"
+  | "support.manage"
+  | "content.edit"
+  | "content.publish"
+  | "lender.view"
+  | "compliance.manage"
+  | "metrics.view";
 
 /** Every permission, in one list, so the master admin always has all of them, including ones added later. */
 const ALL = [
   "application.view_all", "application.view_own", "application.assign", "document.review", "task.raise", "review.pass",
   "consent.request", "bank.select", "package.send_to_gate", "gate.approve", "portal.submit", "bank_status.record",
   "bank_status.check", "decision.reroute", "application.close", "application.propose_close", "hold.set", "flag.resolve",
-  "pii.reveal", "note.add", "export.counts", "audit.view", "staff.manage", "site.manage",
+  "pii.reveal", "note.add", "export.counts", "audit.view", "staff.manage", "site.manage", "support.view", "support.manage",
+  "content.edit", "content.publish", "lender.view", "compliance.manage", "metrics.view",
 ] as const satisfies readonly Permission[];
 // Fails to compile if a permission is added above but not to ALL.
 const _allCovered: Exclude<Permission, (typeof ALL)[number]> extends never ? true : false = true;
@@ -66,19 +75,27 @@ const P: Record<Role, Permission[]> = {
   OPS_MANAGER: [
     "application.view_all", "application.assign", "document.review", "task.raise", "review.pass", "consent.request", "bank.select",
     "package.send_to_gate", "gate.approve", "bank_status.record", "bank_status.check", "decision.reroute", "application.close",
-    "hold.set", "flag.resolve", "pii.reveal", "note.add", "export.counts",
+    "hold.set", "flag.resolve", "pii.reveal", "note.add", "export.counts", "support.view", "lender.view", "metrics.view",
   ],
   OPS_EXECUTIVE: [
     "application.view_own", "document.review", "task.raise", "review.pass", "consent.request", "bank.select", "package.send_to_gate",
-    "bank_status.record", "application.propose_close", "pii.reveal", "note.add",
+    "bank_status.record", "application.propose_close", "pii.reveal", "note.add", "lender.view",
   ],
   DOCUMENT_REVIEWER: ["application.view_own", "document.review", "task.raise", "note.add"],
   DSA_OPERATOR: ["portal.submit", "bank_status.record", "note.add"],
-  BANK_MANAGER: ["bank_status.record", "bank_status.check", "note.add"],
-  FINANCE: [],
-  COMPLIANCE: ["application.view_all", "hold.set", "flag.resolve", "pii.reveal", "export.counts", "audit.view"],
+  BANK_MANAGER: ["bank_status.record", "bank_status.check", "note.add", "lender.view"],
+  // Phase 2 money flows aren't built (no signed commission schedule exists), so Finance sees counts only.
+  FINANCE: ["metrics.view", "export.counts"],
+  // Compliance approves public content and consent wording (v4 sections 34, 42) and runs data rights, holds and purge.
+  COMPLIANCE: [
+    "application.view_all", "hold.set", "flag.resolve", "pii.reveal", "export.counts", "audit.view", "support.view", "support.manage",
+    "content.publish", "lender.view", "compliance.manage", "metrics.view",
+  ],
   FRAUD_RISK: ["application.view_all", "hold.set", "flag.resolve"],
-  SUPPORT: [],
+  // Support sees tickets, never documents or application data (v4 section 36).
+  SUPPORT: ["support.view", "support.manage"],
+  // Writes guides and pages; someone else (Compliance or the master admin) approves and publishes.
+  CONTENT_EDITOR: ["content.edit"],
 };
 
 export type StaffUser = { username: string; role: Role; name: string; banks: string[] };

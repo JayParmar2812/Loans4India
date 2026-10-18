@@ -76,6 +76,14 @@ model LoanApplication {
   uploadTokenExpiresAt DateTime?
   submittedAt          DateTime? // applicant pressed "Submit"
   declarationAt        DateTime? // applicant confirmed details are true and complete
+  lastApplicantAt      DateTime? // last thing the applicant did (dormancy timers, section 26)
+
+  // Retention (sections 26, 43). The purge job removes personal data after purgeAfter unless a legal hold is set.
+  purgeAfter      DateTime?
+  purgedAt        DateTime?
+  legalHold       Boolean   @default(false)
+  legalHoldReason String?
+  legalHoldBy     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -94,6 +102,7 @@ model LoanApplication {
   @@index([panHash])
   @@index([stage, createdAt])
   @@index([ownerId, stage])
+  @@index([stage, purgeAfter])
 }
 
 // One row per purpose the customer agreed (or declined). Never updated, only appended.
@@ -298,8 +307,16 @@ model StaffAccount {
   name         String
   role         String // a key of ROLES in src/lib/rbac.ts
   banks        String   @default("[]") // JSON list of bank ids this person holds a portal login for
-  passwordHash String // scrypt, "salt:hash" in hex
+  passwordHash String // "argon2id$..."; older accounts hold scrypt "salt:hash", upgraded at the next sign-in
   active       Boolean  @default(true)
+  // TOTP second factor (RFC 6238). The secret is field-encrypted; mfaEnabledAt is set once the first code is confirmed.
+  mfaSecretEnc      String?
+  mfaEnabledAt      DateTime?
+  mfaLastStep       Int? // last TOTP time-step accepted; a code is never accepted twice
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
   createdBy    String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -319,11 +336,14 @@ model AdminEvent {
 
 /// Public website content set by the master admin on the Website screen. The newest row is live; older rows are the history.
 model SiteContentVersion {
-  id        Int      @id @default(autoincrement())
-  content   String // JSON, shape in src/config/siteContent.ts
-  note      String?
-  createdBy String
-  createdAt DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  content     String // JSON, shape in src/config/siteContent.ts
+  note        String?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  // Null = a saved draft. The live site is the newest published version.
+  publishedAt DateTime?
+  publishedBy String?
 }
 
 /// Images the master admin uploads on the Website screen (public once used on a page). Stored encrypted like documents.
@@ -347,4 +367,171 @@ model ApplicantFlowVersion {
   note      String?
   createdBy String
   createdAt DateTime @default(now())
+}
+
+/// A signed-in staff browser. Only a SHA-256 hash of the cookie token is stored.
+/// mfaPassed stays false until the TOTP step; nothing beyond the MFA screen works until then.
+model StaffSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  username   String
+  mfaPassed  Boolean   @default(false)
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([username])
+}
+
+/// One-time password sent to an applicant's mobile (section 4). Only a keyed hash of the code is stored.
+model OtpChallenge {
+  id         String    @id @default(cuid())
+  mobile     String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  @@index([mobile, createdAt])
+  @@index([ip, createdAt])
+}
+
+/// An applicant signed in with OTP. Sees only applications on the verified mobile.
+model ApplicantSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  mobile     String
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([mobile])
+}
+
+/// Delivery log for applicant messages (section 42). A row is only SENT or DELIVERED when a provider says so.
+model MessageLog {
+  id            String   @id @default(cuid())
+  applicationId String?
+  template      String
+  channel       String // SMS | EMAIL | WHATSAPP
+  recipient     String // masked, e.g. ******1234
+  body          String // the rendered text: reference and links only, never personal details
+  // QUEUED | HELD_QUIET_HOURS | SENT | DELIVERED | FAILED | NO_PROVIDER
+  status        String   @default("QUEUED")
+  provider      String?
+  providerRef   String?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([applicationId])
+}
+
+/// Contact, complaint and data-rights requests (section 41). Changes are logged as SupportTicketEvent rows.
+model SupportTicket {
+  id             String    @id @default(cuid())
+  reference      String    @unique // e.g. TKT-7K3P9Q
+  // QUERY | COMPLAINT | DATA_ACCESS | DATA_CORRECTION | DATA_ERASURE | CONSENT_WITHDRAWAL | NOMINATE
+  type           String
+  name           String
+  mobile         String
+  email          String?
+  applicationRef String?
+  message        String
+  // Mobile proved by OTP when the request was made (needed before any personal data is released)
+  verified       Boolean   @default(false)
+  // OPEN | IN_PROGRESS | ESCALATED | RESOLVED | CLOSED
+  status         String    @default("OPEN")
+  level          Int       @default(1) // 1 = Support / Compliance, 2 = Grievance Officer
+  assignee       String?
+  dueAt          DateTime
+  acknowledgedAt DateTime?
+  outcome        String?
+  ip             String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  events SupportTicketEvent[]
+
+  @@index([status, dueAt])
+  @@index([mobile])
+}
+
+model SupportTicketEvent {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id])
+  actor     String
+  type      String // CREATED | ASSIGNED | NOTE | STATUS_CHANGED | ESCALATED
+  detail    String?
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+/// Guides and articles (CMS). The public site shows liveRevision only; editors work on draftRevision.
+/// Publishing points liveRevision at an approved draft, so live content never changes until a second person approves.
+model Article {
+  id              String    @id @default(cuid())
+  slug            String    @unique
+  category        String // GUIDE | NEWS | GLOSSARY
+  // State of the working draft: DRAFT | IN_REVIEW | APPROVED. Whether anything is live is liveRevisionId.
+  status          String    @default("DRAFT")
+  liveRevisionId  String?
+  draftRevisionId String?
+  publishAt       DateTime? // scheduled publication of the live revision; null = immediately
+  publishedBy     String?
+  publishedAt     DateTime?
+  reviewRequestedBy String?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  revisions ArticleRevision[]
+
+  @@index([status])
+}
+
+/// Immutable snapshot of an article: content blocks plus SEO fields. Restoring copies an old revision into a new one.
+model ArticleRevision {
+  id        String   @id @default(cuid())
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id])
+  version   Int
+  data      String // JSON, shape in src/features/cms/domain/article.ts
+  note      String?
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@unique([articleId, version])
+}
+
+/// Same-site redirects for retired or renamed pages. Managed with site.manage.
+model Redirect {
+  id        String   @id @default(cuid())
+  fromPath  String   @unique
+  toPath    String
+  permanent Boolean  @default(true)
+  createdBy String
+  createdAt DateTime @default(now())
+}
+
+/// Proof that the purge job ran, with no personal data in it (section 26).
+model PurgeLog {
+  id            String   @id @default(cuid())
+  applicationId String
+  reference     String
+  dataClasses   String // JSON list: DOCUMENTS, PROFILE, IDENTIFIERS
+  filesDeleted  Int
+  jobVersion    String
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
 }

@@ -7,18 +7,11 @@ import { appFlow, checklistFor } from "@/features/applicant-flow/config/applican
 import { checkFile, cleanName, scanFile } from "@/features/documents/server/filecheck.server";
 import { saveEncrypted } from "@/shared/storage/storage.server";
 import { consentState } from "@/features/consent/domain/consentState";
+import { rateLimited, sameOrigin } from "@/shared/security/request.server";
 
 export const runtime = "nodejs";
 
 const MAX_DOCS_PER_APPLICATION = 60;
-const hits = new Map<string, number[]>();
-function throttled(key: string) {
-  const now = Date.now();
-  const list = (hits.get(key) ?? []).filter((t) => now - t < 60 * 60 * 1000);
-  list.push(now);
-  hits.set(key, list);
-  return list.length > 80; // uploads per hour per application
-}
 
 const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 const gone = () => NextResponse.json({ ok: false, error: "This link has expired or is not valid." }, { status: 404, headers: noStore });
@@ -33,11 +26,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
 /** Upload one file into one slot (multipart: slot, file). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
   const { token } = await params;
   const app = await applicantApp(token);
   if (!app || app.stage === "CLOSED") return gone();
   if (!consentState(app.consents).valid) return NextResponse.json({ ok: false, error: "Please give consent before uploading documents." }, { status: 409, headers: noStore });
-  if (throttled(app.id)) return NextResponse.json({ ok: false, error: "Too many uploads. Please try again in a while." }, { status: 429, headers: noStore });
+  if (rateLimited(`upload:${app.id}`, 80, 3600e3)) return NextResponse.json({ ok: false, error: "Too many uploads. Please try again in a while." }, { status: 429, headers: noStore });
 
   let form: FormData;
   try {

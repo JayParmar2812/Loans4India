@@ -4,12 +4,14 @@ import { applicantApp } from "@/features/applications/server/applicant.server";
 import { portalState } from "@/features/applicant-portal/server/portal.server";
 import { consentNotice } from "@/features/consent/domain/consent";
 import { recordConsent } from "@/features/consent/server/consent.server";
+import { clientIp, sameOrigin, userAgentOf } from "@/shared/security/request.server";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
 /** One-tap re-consent when the partner-bank list changed (section 5, state CONSENT_PENDING). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
   const { token } = await params;
   const app = await applicantApp(token);
   if (!app || app.stage !== "CONSENT_PENDING") return NextResponse.json({ ok: false, error: "Nothing to confirm here." }, { status: 409, headers: noStore });
@@ -22,9 +24,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   // Return to the state the application was in when re-consent was requested.
   const req_ = await prisma.applicationEvent.findFirst({ where: { applicationId: app.id, type: "RECONSENT_REQUESTED" }, orderBy: { createdAt: "desc" } });
   const back = (req_?.detail ? (JSON.parse(req_.detail) as { from?: string }).from : null) ?? "VERIFICATION_REVIEW";
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = clientIp(req.headers);
   await prisma.$transaction(async (tx) => {
-    const n = await recordConsent(tx, app.id, notice, { required: true, marketing: Boolean(body.marketing) }, { ip, userAgent: req.headers.get("user-agent")?.slice(0, 300) ?? null });
+    const n = await recordConsent(tx, app.id, notice, { required: true, marketing: Boolean(body.marketing) }, { ip, userAgent: userAgentOf(req.headers) });
     await tx.loanApplication.update({ where: { id: app.id }, data: { stage: back } });
     await tx.applicationEvent.create({ data: { applicationId: app.id, type: "CONSENT_GIVEN", actor: "customer", detail: JSON.stringify({ from: "CONSENT_PENDING", to: back, bankListVersion: n.bankListVersion }) } });
   });

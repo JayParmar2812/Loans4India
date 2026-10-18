@@ -3,12 +3,14 @@ import { prisma } from "@/shared/db/db";
 import { applicantApp } from "@/features/applications/server/applicant.server";
 import { portalState, uploadableSlots } from "@/features/applicant-portal/server/portal.server";
 import { deleteStored } from "@/shared/storage/storage.server";
+import { sameOrigin } from "@/shared/security/request.server";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
 /** Applicant removes a file they uploaded by mistake (only unreviewed files, only in slots they may still change). */
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ token: string; docId: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ token: string; docId: string }> }) {
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403, headers: noStore });
   const { token, docId } = await params;
   const app = await applicantApp(token);
   if (!app || app.stage === "CLOSED") return NextResponse.json({ ok: false, error: "This link has expired or is not valid." }, { status: 404, headers: noStore });

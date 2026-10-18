@@ -48,3 +48,6 @@ next-env.d.ts
 
 # uploaded documents (encrypted) — never commit
 /storage
+
+# test databases
+/.test-db

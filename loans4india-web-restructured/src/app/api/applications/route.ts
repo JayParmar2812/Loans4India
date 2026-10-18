@@ -4,30 +4,24 @@ import { registrationSchema } from "@/features/apply/domain/validation";
 import { consentNotice } from "@/features/consent/domain/consent";
 import { recordConsent } from "@/features/consent/server/consent.server";
 import { newReference } from "@/features/apply/domain/reference";
-import { newUploadToken } from "@/features/applicant-portal/server/uploadToken.server";
+import { applicantMobile } from "@/features/applicant-auth/server/applicantSession.server";
+import { clientIp, rateLimited, sameOrigin, userAgentOf } from "@/shared/security/request.server";
 import { getSiteContent } from "@/features/site-control/server/siteContent.server";
 import { getLiveFlow, openLoanTypes } from "@/features/applicant-flow/server/applicantFlow.server";
 import { appFlowFrom } from "@/features/applicant-flow/config/applicantFlow";
 
 export const runtime = "nodejs";
 
-// Basic per-IP throttle. In production replace with Redis / edge rate limiting.
-const hits = new Map<string, number[]>();
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_PER_WINDOW = 5;
-function throttled(ip: string) {
-  const now = Date.now();
-  const list = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  list.push(now);
-  hits.set(ip, list);
-  return list.length > MAX_PER_WINDOW;
-}
-
+/**
+ * Start an application (Platform Flow v4, sections 4-5). The mobile must already be verified by OTP in this browser,
+ * and the required consent ticked on the screen that named the banks. Creates the application, records consent, done.
+ */
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const userAgent = req.headers.get("user-agent")?.slice(0, 300) ?? null;
+  if (!sameOrigin(req.headers)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  const ip = clientIp(req.headers);
+  const userAgent = userAgentOf(req.headers);
 
-  if (throttled(ip)) {
+  if (rateLimited(`apply:${ip}`, 10, 10 * 60_000)) {
     return NextResponse.json({ ok: false, error: "Too many attempts. Please try again in a few minutes." }, { status: 429 });
   }
 
@@ -52,6 +46,11 @@ export async function POST(req: NextRequest) {
   // Bots fill hidden fields. Pretend success, store nothing.
   if (d.website) return NextResponse.json({ ok: true, status: "received" });
 
+  // Only the person who proved this mobile by OTP can apply with it.
+  const verified = await applicantMobile();
+  if (!verified) return NextResponse.json({ ok: false, error: "Please verify your mobile number first.", needOtp: true }, { status: 401 });
+  if (verified !== d.mobile) return NextResponse.json({ ok: false, error: "This isn't the mobile number you verified. Please verify it again.", needOtp: true }, { status: 403 });
+
   // Paused on the Website screen, or this loan type is switched off or has no partner bank.
   const site = await getSiteContent();
   const live = await getLiveFlow();
@@ -73,28 +72,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "We can't take applications for this loan yet. Please check back soon." }, { status: 409 });
   }
 
-  // One open application per mobile and product (section 4). Never reveal whether a number already applied.
+  // One open application per mobile and product (section 4): the verified owner is taken to it, no second record.
   const existing = await prisma.loanApplication.findFirst({
     where: { mobile: d.mobile, product: d.product, stage: { not: "CLOSED" } },
-    select: { id: true },
+    select: { id: true, reference: true },
   });
   if (existing) {
     await prisma.applicationEvent.create({
-      data: { applicationId: existing.id, type: "DUPLICATE_ATTEMPT", actor: "customer", detail: JSON.stringify({ ip }) },
+      data: { applicationId: existing.id, type: "DUPLICATE_ATTEMPT", actor: "customer", detail: JSON.stringify({ note: "Verified applicant sent to the open application" }) },
     });
-    return NextResponse.json({ ok: true, status: "already_received" });
+    return NextResponse.json({ ok: true, status: "existing", reference: existing.reference });
   }
 
   const reference = await uniqueReference();
-  const upload = newUploadToken();
 
   await prisma.$transaction(async (tx) => {
     const app = await tx.loanApplication.create({
       data: {
         reference,
         stage: "ENQUIRY",
-        uploadTokenHash: upload.hash,
-        uploadTokenExpiresAt: upload.expiresAt,
+        lastApplicantAt: new Date(),
         product: d.product,
         // The form, questions and checklist live now stay with this application.
         flow: JSON.stringify(appFlowFrom(live.flow, live.version, d.product)),
@@ -118,9 +115,8 @@ export async function POST(req: NextRequest) {
     });
   });
 
-  // The link is shown once, to this browser, so the applicant can continue. Only its hash is stored.
-  // (Later: OTP sign-in replaces the link, and the link also goes by SMS.)
-  return NextResponse.json({ ok: true, status: "created", reference, uploadToken: upload.token }, { status: 201 });
+  // The applicant continues at /my/applications/<reference>, signed in by the OTP they just used.
+  return NextResponse.json({ ok: true, status: "created", reference }, { status: 201 });
 }
 
 async function uniqueReference() {
