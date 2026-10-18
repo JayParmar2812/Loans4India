@@ -6,6 +6,8 @@ import { portalState } from "@/features/applicant-portal/server/portal.server";
 import { DocumentCenter } from "@/features/applicant-portal/components/DocumentCenter";
 import { loanTypeLabel } from "@/features/applicant-flow/config/applicantFlow";
 import { formatINR } from "@/shared/utils/format";
+import { MarketingPreference } from "@/features/applicant-portal/components/MarketingPreference";
+import { consentState } from "@/features/consent/domain/consentState";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Your application", robots: { index: false, follow: false }, referrer: "no-referrer" };
@@ -36,6 +38,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         </p>
       )}
       <DocumentCenter token={app.reference} initial={state} />
+      {!state.closed && <MarketingPreference appKey={app.reference} initial={consentState(app.consents).marketing} />}
     </div>
   );
 }

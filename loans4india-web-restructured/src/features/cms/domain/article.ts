@@ -26,8 +26,9 @@ const canonicalSchema = z.union([
 ]);
 
 export const articleDataSchema = z.object({
-  title: text(120).min(5, "Give the guide a title"),
-  excerpt: text(300).min(20, "Write a one or two sentence summary (shown in lists and search results)"),
+  title: text(120).min(1, "Give the guide a title"),
+  // Completeness (summary length, no empty blocks) is checked when it goes for approval, so drafts can be saved half-written.
+  excerpt: text(300),
   category: z.enum(Object.keys(ARTICLE_CATEGORIES) as [ArticleCategory, ...ArticleCategory[]]),
   blocks: z.array(blockSchema).min(1, "Add at least one block of content").max(60),
   seo: z.object({
@@ -44,11 +45,13 @@ export const articleDataSchema = z.object({
 });
 export type ArticleData = z.infer<typeof articleDataSchema>;
 
+const PLACEHOLDER = "Write the guide here.";
+
 export const emptyArticle = (title = ""): ArticleData => ({
   title,
   excerpt: "",
   category: "GUIDE",
-  blocks: [{ type: "text", text: "" }],
+  blocks: [{ type: "text", text: PLACEHOLDER }],
   seo: { title: "", description: "", canonical: "", noindex: false, image: "", imageAlt: "" },
   breadcrumb: "",
   related: [],
@@ -66,7 +69,9 @@ export function articleProblems(raw: unknown, mode: "save" | "publish"): { data:
   const banned = bannedPhrases(d);
   if (banned.length) problems.push(`A guide can't say "${banned.join('", "')}": an estimate is never an approval, and only the bank decides.`);
   if (mode === "publish") {
-    if (d.blocks.some((b) => b.type === "text" && !b.text.trim())) problems.push("Remove or fill the empty text blocks.");
+    if (d.title.length < 5) problems.push("Give the guide a proper title (at least 5 characters).");
+    if (d.excerpt.length < 20) problems.push("Write a one or two sentence summary (shown in lists and search results).");
+    if (d.blocks.some((b) => b.type === "text" && (!b.text.trim() || b.text.trim() === PLACEHOLDER))) problems.push("Replace the placeholder text with the guide itself.");
     if (d.seo.image && !d.seo.imageAlt) problems.push("Describe the social image (alt text) for people who can't see it.");
     if (d.seo.description && d.seo.description.length < 50) problems.push("The search description is very short; aim for 120 to 160 characters.");
   }

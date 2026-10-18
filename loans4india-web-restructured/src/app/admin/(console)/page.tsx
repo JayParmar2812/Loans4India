@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/shared/db/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { formatINR, maskMobile } from "@/shared/utils/format";
@@ -68,16 +69,10 @@ export default async function ControlTower({ searchParams }: { searchParams: SP 
   const { q, queue } = await searchParams;
   const user = await currentStaff();
   if (!user) return null;
-  if (user.role === "FINANCE" || user.role === "SUPPORT") {
-    return (
-      <div className="rounded-2xl border border-line bg-surface p-6 space-y-2">
-        <p>Your role ({user.role.replaceAll("_", " ").toLowerCase()}) doesn&apos;t work on applications in MVP1.</p>
-        {/* A file download, not a page: a plain link is right here. */}
-        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        {can(user, "export.counts") && <a href="/admin/export" className="text-violet underline">Download counts (CSV)</a>}
-      </div>
-    );
-  }
+  // Roles that don't work on cases land on their own screen (v4: Support never sees documents; Finance has no money flows in MVP1).
+  if (user.role === "SUPPORT") redirect("/admin/support");
+  if (user.role === "FINANCE") redirect("/admin/insights");
+  if (user.role === "CONTENT_EDITOR") redirect("/admin/content");
   const search = q?.trim();
   const where = search ? { OR: [{ reference: { contains: search.toUpperCase() } }, { mobile: { contains: search.replace(/\D/g, "") || search } }, { fullName: { contains: search } }] } : {};
   const rows = (await load(where)).filter((r) => canSeeCase(user, r, r.attempts.map((t) => t.bankId)));

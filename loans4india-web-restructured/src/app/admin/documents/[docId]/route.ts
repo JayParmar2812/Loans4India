@@ -12,6 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ docId: 
   const { docId } = await params;
   const doc = await prisma.applicationDocument.findUnique({ where: { id: docId }, include: { application: { include: { attempts: { select: { bankId: true } } } } } });
   if (!user || !doc || doc.status === "REMOVED") return new Response("Not found", { status: 404 });
+  if (doc.status === "PURGED") return new Response("This document was deleted under the retention policy.", { status: 410 });
   // Operators get documents only through the approved package; reviewers and owners open them here.
   if (user.role === "DSA_OPERATOR" || !canSeeCase(user, doc.application, doc.application.attempts.map((a) => a.bankId))) return new Response("Not found", { status: 404 });
   const data = await readDecrypted(doc.storageKey);

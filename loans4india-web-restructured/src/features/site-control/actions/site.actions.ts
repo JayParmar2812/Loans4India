@@ -49,7 +49,8 @@ async function publish(content: SiteContent, actor: string, type: "SITE_CONTENT_
   const changed = changedParts(before, content);
   if (changed.length === 0) return fail("Nothing has changed since the last save.");
   if ((await missingImages(content)).length) return fail("An image this version uses has been removed from the library. Pick another image and save.");
-  const row = await prisma.siteContentVersion.create({ data: { content: JSON.stringify(content), note, createdBy: actor } });
+  // Saving on the Website screen publishes at once (the screen has its own preview); publishedAt marks it live.
+  const row = await prisma.siteContentVersion.create({ data: { content: JSON.stringify(content), note, createdBy: actor, publishedAt: new Date(), publishedBy: actor } });
   await prisma.adminEvent.create({ data: { type, actor, target: `website v${row.id}`, detail: JSON.stringify({ changed, note, ...extra }) } });
   // Every public page reads the content through the root layout.
   revalidatePath("/", "layout");

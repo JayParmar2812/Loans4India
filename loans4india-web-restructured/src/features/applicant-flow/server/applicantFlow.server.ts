@@ -8,9 +8,8 @@ import type { SiteContent } from "@/features/site-control/config/siteContent";
 
 export type LiveFlow = { version: number; flow: Flow };
 
-/** The live applicant flow: the newest saved version, or the built-in defaults (version 0). */
-export const getLiveFlow = cache(async (): Promise<LiveFlow> => {
-  await connection();
+/** The live applicant flow: the newest saved version, or the built-in defaults (version 0). Usable outside a request (scripts). */
+export async function readLiveFlow(): Promise<LiveFlow> {
   const row = await prisma.applicantFlowVersion.findFirst({ orderBy: { id: "desc" } });
   if (!row) return { version: 0, flow: DEFAULT_FLOW };
   try {
@@ -19,6 +18,12 @@ export const getLiveFlow = cache(async (): Promise<LiveFlow> => {
     console.error(`Applicant flow version ${row.id} can't be read; using the built-in defaults.`);
     return { version: 0, flow: DEFAULT_FLOW };
   }
+}
+
+/** The live applicant flow for a request; connection() keeps reading pages out of build-time prerendering. */
+export const getLiveFlow = cache(async (): Promise<LiveFlow> => {
+  await connection();
+  return readLiveFlow();
 });
 
 /**
