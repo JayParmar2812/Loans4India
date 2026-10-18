@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/*
+ * Loans4India design tokens.
+ * Colours are sampled from the approved Mint Smile logo (violet #3e1dc8, mint #36d49f).
+ * White and mint carry the surfaces; violet is the accent (links, focus, the wordmark).
+ * Text on mint is always ink (mint is too light for white text).
+ */
+:root {
+  --violet: #3e1dc8;
+  --violet-deep: #24107a;
+  --violet-soft: #efecfd;
+  --mint: #36d49f;
+  --mint-deep: #0b7a56; /* mint for text and icons on white (AA contrast) */
+  --mint-soft: #e8faf3;
+  --mint-ink: #0f1f1a;
+  --ink: #14122b;
+  --muted: #55526b;
+  --line: #e4e2ee;
+  --canvas: #fbfcfd;
+  --surface: #ffffff;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --warn: #8a5300;
+  --warn-soft: #fff4e0;
+  --success: #1f7a45;
+  --radius: 14px;
+  --shadow-card: 0 1px 2px rgb(20 18 43 / 0.04), 0 8px 24px -12px rgb(20 18 43 / 0.12);
+  /* Heading font; the master admin can switch it on the Website screen. */
+  --heading-font: "Plus Jakarta Sans Variable", "Mukta", system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-violet: var(--violet);
+  --color-violet-deep: var(--violet-deep);
+  --color-violet-soft: var(--violet-soft);
+  --color-mint: var(--mint);
+  --color-mint-deep: var(--mint-deep);
+  --color-mint-soft: var(--mint-soft);
+  --color-mint-ink: var(--mint-ink);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-success: var(--success);
+  --font-display: var(--heading-font);
+  /* Plus Jakarta for Latin text; Mukta covers Devanagari (Hindi) glyphs. */
+  --font-sans: "Plus Jakarta Sans Variable", "Mukta", system-ui, sans-serif;
+  --shadow-card: var(--shadow-card);
+}
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; letter-spacing: -0.015em; }
+p { text-wrap: pretty; }
+
+.num { font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; border-radius: 6px; }
+
+/* ---------- Buttons ---------- */
+.btn-primary, .btn-ghost, .btn-secondary, .btn-quiet {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.2;
+  padding: .8rem 1.35rem; border-radius: 12px; min-height: 44px; /* tap target */
+  transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+  cursor: pointer; text-decoration: none;
+}
+.btn-primary { background: var(--mint); color: var(--mint-ink); box-shadow: inset 0 -2px 0 rgb(0 0 0 / .08); }
+.btn-primary:hover { background: #2fc792; box-shadow: 0 8px 20px -10px rgb(11 122 86 / .6); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-secondary { background: var(--violet); color: #fff; }
+.btn-secondary:hover { background: var(--violet-deep); }
+.btn-ghost { border: 1.5px solid var(--violet); color: var(--violet); background: #fff; }
+.btn-ghost:hover { background: var(--violet-soft); }
+.btn-quiet { color: var(--violet); padding-inline: .6rem; }
+.btn-quiet:hover { background: var(--violet-soft); }
+.btn-primary:disabled, .btn-ghost:disabled, .btn-secondary:disabled { opacity: .55; transform: none; box-shadow: none; cursor: not-allowed; }
+
+/* ---------- Forms ---------- */
+.field-label { display: block; font-size: .875rem; color: var(--ink); margin-bottom: .35rem; font-weight: 600; }
+.field-hint { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+.field-input {
+  width: 100%; border: 1.5px solid var(--line); border-radius: 12px; background: #fff;
+  padding: .7rem .9rem; font-size: 1rem; color: var(--ink); min-height: 46px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field-input::placeholder { color: #9b98ad; }
+.field-input:hover { border-color: #cfccdd; }
+.field-input:focus { border-color: var(--violet); outline: none; box-shadow: 0 0 0 4px var(--violet-soft); }
+.field-input[aria-invalid="true"] { border-color: var(--danger); }
+.field-error { color: var(--danger); font-size: .82rem; margin-top: .3rem; font-weight: 500; }
+
+input[type="range"] { accent-color: var(--violet); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--violet); }
+
+/* ---------- Surfaces ---------- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-card); }
+.chip { display: inline-flex; align-items: center; gap: .35rem; border-radius: 999px; padding: .25rem .7rem; font-size: .8rem; font-weight: 600; }
+.eyebrow { font-family: var(--font-display); font-weight: 700; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--mint-deep); }
+.prose-l4i { max-width: 70ch; }
+.prose-l4i h2 { font-size: 1.5rem; font-weight: 800; color: var(--ink); margin-top: 2rem; margin-bottom: .6rem; }
+.prose-l4i h3 { font-size: 1.15rem; font-weight: 700; margin-top: 1.4rem; margin-bottom: .4rem; }
+.prose-l4i p { margin: .75rem 0; }
+.prose-l4i ul { list-style: disc; padding-left: 1.25rem; margin: .75rem 0; }
+.prose-l4i ol { list-style: decimal; padding-left: 1.25rem; margin: .75rem 0; }
+.prose-l4i li { margin: .3rem 0; }
+.prose-l4i a { color: var(--violet); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Soft brand backdrop for hero areas: white into mint, no heavy gradients. */
+.hero-wash { background: radial-gradient(1200px 500px at 85% -10%, var(--mint-soft), transparent 60%), radial-gradient(800px 400px at -10% 110%, var(--violet-soft), transparent 60%), #fff; }
