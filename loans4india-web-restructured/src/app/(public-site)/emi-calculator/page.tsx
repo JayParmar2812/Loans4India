@@ -1,33 +1,41 @@
-import type { Metadata } from "next";
 import { EmiCalculator } from "@/features/public-site/components/EmiCalculator";
-import { EligibilityCalculator } from "@/features/public-site/components/EligibilityCalculator";
-import { notFound } from "next/navigation";
-import { getSiteContent } from "@/features/site-control/server/siteContent.server";
+import { CalculatorPage } from "@/features/public-site/components/CalculatorPage";
+import { CALCULATORS } from "@/features/public-site/content/calculators";
+import { pageMetadata } from "@/shared/seo/metadata";
+import { emiBreakdown } from "@/features/public-site/domain/finance";
+import { formatINR } from "@/shared/utils/format";
 
-export const metadata: Metadata = {
-  title: "EMI Calculator & Loan Estimate",
-  description: "Calculate your loan EMI, total interest and a quick estimate of how much you could borrow. Indicative only, never an approval.",
-};
+const meta = CALCULATORS[0];
+export const metadata = pageMetadata({ title: "EMI Calculator: monthly instalment and total interest", description: meta.description, path: meta.href });
 
-export default async function Page() {
-  if (!(await getSiteContent()).tools.emiCalculator) notFound();
+// Worked example computed from the same formula the calculator uses, so the page never disagrees with the tool.
+const ex = emiBreakdown(300000, 13.5, 36);
+
+export default function Page() {
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12 space-y-16">
-      <section>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-violet-deep">EMI Calculator</h1>
-        <p className="text-muted mt-2 max-w-2xl">See your monthly instalment, total interest and total repayment for any loan amount, rate and tenure.</p>
-        <div className="mt-8"><EmiCalculator /></div>
-      </section>
-      <section id="eligibility" className="scroll-mt-24">
-        <h2 className="text-3xl sm:text-4xl font-extrabold text-violet-deep">How much can I borrow?</h2>
-        <p className="text-muted mt-2 max-w-2xl">A quick estimate based on your income and the EMIs you already pay.</p>
-        <div className="mt-8"><EligibilityCalculator /></div>
-      </section>
-      <section className="max-w-3xl space-y-3 text-muted">
-        <h2 className="text-2xl font-extrabold text-ink">How EMI is calculated</h2>
-        <p>EMI = P × r × (1 + r)<sup>n</sup> ÷ ((1 + r)<sup>n</sup> − 1), where P is the loan amount, r is the monthly interest rate (annual rate ÷ 12 ÷ 100) and n is the number of months.</p>
-        <p>Example: ₹3,00,000 at 13.5% for 3 years gives an EMI of about ₹10,180 and total interest of about ₹66,500.</p>
-      </section>
-    </div>
+    <CalculatorPage
+      path={meta.href}
+      title="EMI calculator"
+      intro="See the monthly instalment, total interest and total repayment for any loan amount, rate and tenure, and how each year splits between interest and principal."
+      description={meta.description}
+      tool={<EmiCalculator />}
+      explainer={
+        <>
+          <h2>How EMI is calculated</h2>
+          <p>
+            EMI = P × r × (1 + r)<sup>n</sup> ÷ ((1 + r)<sup>n</sup> − 1), where P is the loan amount, r is the monthly interest rate (annual rate ÷ 12 ÷ 100) and n is the number of monthly instalments.
+          </p>
+          <p>
+            Example: {formatINR(300000)} at 13.5% a year for 3 years gives an EMI of about {formatINR(ex.emi)}, total interest of about {formatINR(ex.totalInterest)} and a total repayment of about {formatINR(ex.totalPayable)}.
+          </p>
+          <h2>Why early EMIs are mostly interest</h2>
+          <p>Interest is charged on the balance you still owe. At the start the balance is highest, so more of each EMI goes to interest; as the balance falls, more goes to repaying the loan itself. Open the year-by-year breakdown to see it.</p>
+        </>
+      }
+      faq={[
+        { q: "Is the EMI shown here what the bank will charge?", a: "No. It's an illustration from the rate you enter. The bank sets your actual rate from its own assessment, and may add fees. Its Key Fact Statement shows the final EMI, fees and APR before you accept." },
+        { q: "Does a lower EMI mean a cheaper loan?", a: "Not always. Stretching the tenure lowers the EMI but increases the total interest you pay. Use the interest calculator to compare tenures." },
+      ]}
+    />
   );
 }

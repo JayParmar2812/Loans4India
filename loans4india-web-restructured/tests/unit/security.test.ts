@@ -73,3 +73,13 @@ describe("staff passwords", () => {
     expect(passwordProblem("tulip-kettle-orbit-91", "asha")).toBeNull();
   });
 });
+
+import { jsonLdString } from "@/shared/seo/JsonLd";
+
+describe("JSON-LD escaping (CMS text inside a script tag)", () => {
+  it("can't be closed early by content", () => {
+    const out = jsonLdString({ a: "</script><script>alert(1)</script> & <b>" });
+    expect(out).not.toMatch(/<|>/);
+    expect(JSON.parse(out).a).toBe("</script><script>alert(1)</script> & <b>");
+  });
+});

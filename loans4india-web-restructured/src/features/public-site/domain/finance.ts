@@ -57,3 +57,41 @@ export function estimateEligibility(
   // Round down to the nearest ₹10,000 so we never overstate.
   return { maxEmi, maxLoan: Math.floor(maxLoan / 10000) * 10000, status };
 }
+
+export type AmortisationYear = { year: number; principalPaid: number; interestPaid: number; closingBalance: number };
+
+/**
+ * Year-by-year split of a reducing-balance loan: how much of each year's EMIs goes to interest and to principal.
+ * Uses the unrounded EMI, so the balance reaches zero exactly at the end.
+ */
+export function amortisationByYear(principal: number, annualRatePct: number, months: number): AmortisationYear[] {
+  if (principal <= 0 || months <= 0) return [];
+  const r = annualRatePct / 12 / 100;
+  const m = emi(principal, annualRatePct, months);
+  const out: AmortisationYear[] = [];
+  let balance = principal;
+  let row: AmortisationYear = { year: 1, principalPaid: 0, interestPaid: 0, closingBalance: principal };
+  for (let i = 1; i <= months; i++) {
+    const interest = balance * r;
+    const toPrincipal = Math.min(balance, m - interest);
+    balance = Math.max(0, balance - toPrincipal);
+    row.interestPaid += interest;
+    row.principalPaid += toPrincipal;
+    row.closingBalance = balance;
+    if (i % 12 === 0 || i === months) {
+      out.push(row);
+      row = { year: row.year + 1, principalPaid: 0, interestPaid: 0, closingBalance: balance };
+    }
+  }
+  return out;
+}
+
+/** Loan a monthly budget can repay (the affordability calculator), rounded down to ₹1,000 so it never overstates. */
+export function affordableLoan(monthlyBudget: number, annualRatePct: number, months: number): number {
+  return Math.floor(principalForEmi(monthlyBudget, annualRatePct, months) / 1000) * 1000;
+}
+
+/** Same loan, different tenures: EMI and total interest for each (the interest calculator). */
+export function compareTenures(principal: number, annualRatePct: number, tenuresMonths: number[]) {
+  return tenuresMonths.map((n) => ({ months: n, ...emiBreakdown(principal, annualRatePct, n) }));
+}

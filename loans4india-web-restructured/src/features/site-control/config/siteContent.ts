@@ -9,7 +9,7 @@ import { brand } from "@/shared/config/brand";
  */
 
 const text = (max: number) => z.string().trim().max(max);
-const href = z
+export const href = z
   .string()
   .trim()
   .max(300)
@@ -62,7 +62,7 @@ const assetRef = z.union([z.literal(""), z.string().regex(/^[a-z0-9]{20,32}$/, "
 
 export const BLOCK_TYPES = { heading: "Heading", text: "Text", image: "Image", list: "List", faq: "Questions", cta: "Call to action", emi: "EMI calculator" } as const;
 export type BlockType = keyof typeof BLOCK_TYPES;
-const blockSchema = z.discriminatedUnion("type", [
+export const blockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("heading"), text: text(120).min(1, "A heading block needs text") }),
   z.object({ type: z.literal("text"), text: text(5000).min(1, "A text block needs text") }),
   z.object({ type: z.literal("image"), asset: assetRef.refine((a) => a !== "", "Pick an image for the image block"), alt: text(200).min(1, "Describe the image for people who can't see it"), caption: text(200) }),
